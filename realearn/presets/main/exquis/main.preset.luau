@@ -38,7 +38,6 @@ local PORT1_INPUT_DEVICE = 14                   -- "Oxygen Pro 61" input: the Li
 local BTN = { record = 102, loop = 103, clips = 104, play = 105, down = 106, up = 107, undo = 108, redo = 109 }
 local ENC = { 110, 111, 112, 113 }
 local ENC_PUSH = { 114, 115, 116, 117 }
-local SLIDER_CC = 90
 local SLIDER_LED = { 80, 81, 82, 83, 84, 85 }
 
 -- ---- parameters --------------------------------------------------------------------------------
@@ -52,7 +51,6 @@ local SHIFT_DOWN = { kind = "Modifier", modifiers = { { parameter = P_SHIFT, on 
 -- ---- helpers ------------------------------------------------------------------------------------
 local function cc_button(ch, n) return { kind = "MidiControlChangeValue", channel = ch, controller_number = n, character = "Button" } end
 local function encoder(n)       return { kind = "MidiControlChangeValue", channel = CH, controller_number = n, character = "Relative2" } end
-local function raw(pattern)     return { kind = "MidiRaw", pattern = pattern } end
 local function action(cmd)      return { kind = "ReaperAction", command = cmd, invocation = "Trigger" } end
 local function param(i)         return { kind = "CompartmentParameterValue", parameter = { address = "ById", index = i } } end
 local SELECTED = { address = "Selected" }
@@ -168,9 +166,11 @@ add { id = "push-tap", name = "Encoder 4 push = tap tempo (Oxygen watcher)", fee
 paint(ENC_PUSH[4], RGB.white)
 
 -- ---- slider: six zones = go to marker 1-6 --------------------------------------------------------------
+-- measured 2026-09-04 (fw 3.0.0): each slider zone reports as its own button, CC 80-85 on channel 16 (127 touch / 0 release),
+-- not as CC 90 with a zone number as the spec says
 for k = 0, 5 do
     add { id = "slider-" .. (k + 1), name = "Slider zone " .. (k + 1) .. " = go to marker " .. (k + 1), feedback_enabled = false,
-          source = raw(string.format("BF %02X %02X", SLIDER_CC, k)), glue = PRESS, target = action(40161 + k) }
+          source = cc_button(CH, SLIDER_LED[k + 1]), glue = PRESS, target = action(40161 + k) }
     paint(SLIDER_LED[k + 1], RGB.orange)
 end
 

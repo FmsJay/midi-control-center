@@ -28,7 +28,8 @@ Sysex frame `F0 00 21 7E 7F <cmd> ... F7`.
 
 Taken-over zones report on **channel 16**: pads `9F <pad> 7F` / `8F <pad> 00` (fixed velocity, no expression),
 buttons and encoder pushes `BF <id> 7F|00`, encoders `BF <id> <64±n>` (relative, ReaLearn character
-`Relative2`), slider `BF 5A <zone 0-5>` (127 on release). Element ids: pads 0-60 (bottom-left to top-right),
+`Relative2`, accelerated: fast turns send larger steps), slider zones `BF 50..55 7F|00` (measured on firmware 3.0.0: each
+zone is its own button on CC 80-85; the spec's `BF 5A <zone>` form was not seen). Play/Stop also emits MIDI Start (`FA`). Element ids: pads 0-60 (bottom-left to top-right),
 slider zone LEDs 80-85, slider position 90, buttons 100 Settings, 101 Sound, 102 Record, 103 Loop, 104 Clips,
 105 Play/Stop, 106 Down, 107 Up, 108 Undo, 109 Redo, encoders 110-113, encoder pushes 114-117.
 
