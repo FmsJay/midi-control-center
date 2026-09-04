@@ -5,9 +5,10 @@
 ---     The Strich SDP-120 digital piano (REAPER shows it as the generic "General MIDI" device) sends more than notes
 ---     and pedals. Measured 2026-09-04: a keep-alive sysex F0 33 00 F7 once a second forever; its metronome as notes
 ---     75/76 on channel 10; its rhythm accompaniment as drums on channel 10 plus parts on channels 11-15 with program
----     changes; a Roland GS sysex (F0 41 00 42 12 ...) and CC 91 / CC 93 on many channels when reverb or chorus is
----     changed; tone changes as bank select + program change on channel 16; and bursts of CC 64 = 0 on channels
----     2-15 after most panel actions.
+---     changes; the demo songs as complete multi-channel playback (channels 2-15); a Roland GS sysex
+---     (F0 41 00 42 12 ...) and CC 91 / CC 93 on many channels when reverb or chorus is changed; tone changes as bank
+---     select + program change on channel 16; and bursts of CC 64 = 0 on channels 2-15 after most panel actions.
+---     Keys are plain notes with velocity on channel 1.
 ---     This unit listens on the piano's device and "matches" the messages you do not want into a Dummy target;
 ---     ReaLearn does not pass matched events on to tracks, so they vanish before any track set to "all MIDI inputs"
 ---     sees them. Notes, pedals and everything not listed below pass through. Edit the SWALLOW flags to taste.
@@ -18,7 +19,8 @@
 local SWALLOW = {
     keepalive   = true,    -- F0 33 00 F7 (the wireless-app ping, every second)
     metronome   = true,    -- notes 75 / 76 on channel 10 (the piano's click)
-    rhythm      = true,    -- every other note on channel 10 plus channels 11-15 (built-in accompaniment)
+    rhythm      = true,    -- every other note on channel 10 plus the accompaniment / demo parts on channels 2-5 and 7-15
+                           -- (keys are channel 1; channels 6 and 16 carry the layer / split voices and tone changes, kept)
     gs_sysex    = true,    -- Roland GS parameter sysex sent on reverb / chorus changes
     pedal_dupes = false,   -- the pedal CCs (64 / 66 / 67) are repeated on channels 6 and 16; keep them by default
 }
@@ -44,7 +46,7 @@ if SWALLOW.metronome or SWALLOW.rhythm then
     end
 end
 if SWALLOW.rhythm then
-    for ch = 10, 14 do              -- 0-based channels 11-15: accompaniment parts (program changes + notes)
+    for _, ch in ipairs({ 1, 2, 3, 4, 6, 7, 8, 10, 11, 12, 13, 14 }) do   -- 0-based: channels 2-5, 7-9, 11-15 (demo + rhythm parts)
         swallow("part-pc-" .. ch, "Rhythm part program change ch " .. (ch + 1), { kind = "MidiProgramChangeNumber", channel = ch })
         for n = 0, 127 do
             swallow(string.format("part-note-%d-%d", ch, n), string.format("Rhythm part note ch %d", ch + 1),
