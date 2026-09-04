@@ -2141,7 +2141,6 @@ local function draw_exquis_keyboard_box()
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, 'Capture snapshot for start-up') then XQ.capture_snapshot() end
   ImGui.SetItemTooltip(ctx, 'Query the snapshot and write ' .. XQ.SNAPSHOT_PATH .. '\nApply embeds it, and the ReaLearn unit restores this layout each time it loads')
-  ImGui.SameLine(ctx)
   begin_disabled(xq.snap_file == nil)
   if ImGui.Button(ctx, 'Clear snapshot') then XQ.clear_snapshot_file() end
   end_disabled()
@@ -2293,13 +2292,13 @@ local function frame()
   draw_topbar()
   ImGui.Separator(ctx)
   local avail_w = ImGui.GetContentRegionAvail(ctx)
-  local insp_w = math.max(300, math.min(420, avail_w * 0.32))
+  local insp_w = math.max(360, math.min(560, avail_w * 0.38))
   if begin_child('panel', avail_w - insp_w - 8, 0, ImGui.ChildFlags_Borders, ImGui.WindowFlags_HorizontalScrollbar) then
     if view.device == 'exquis' then draw_exquis_panel() else draw_panel() end
     end_child()
   end
   ImGui.SameLine(ctx)
-  if begin_child('inspector', 0, 0, ImGui.ChildFlags_Borders) then
+  if begin_child('inspector', 0, 0, ImGui.ChildFlags_Borders, ImGui.WindowFlags_HorizontalScrollbar) then
     draw_inspector()
     end_child()
   end
