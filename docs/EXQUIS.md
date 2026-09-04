@@ -26,7 +26,7 @@ Sysex frame `F0 00 21 7E 7F <cmd> ... F7`.
 | `02` | read / write the 128-entry colour palette |
 | `03 [page]` | refresh notice, sent by the device when it enters (7F) or leaves its settings menu (LEDs reset) |
 | `04 <id> r g b fx [r g b fx ...]` | set LED colours of consecutive elements, RGB 0-127 each, `fx` 00 none / 3F pulse to black / 7F pulse to white / 3E pulse red / 7E pulse green / 00-3D alpha / 40-7D blend to white |
-| `05 msb lsb`, `06 note`, `07 scale`, `08 d0..d11`, `09 <255 bytes>` | tempo, root note, scale number, custom scale, full snapshot; the device also sends 05/06/07 when they change |
+| `05 msb lsb`, `06 note`, `07 scale`, `08 d0..d11`, `09 <255 bytes>` | tempo, root note, scale number, custom scale, full snapshot; the device also sends 05/06/07 when they change. **Snapshot layout (decoded 2026-09-04):** 11 header bytes (`00 01 30 0E 00 00 00 01 00 00 00` here), then 61 x 4 bytes = note number, red, green, blue (0-127) for every key, bottom-left key first, rows upward; the editor identifies the active layout file from those notes and draws the keys in those colours |
 
 Taken-over zones report on **channel 16**: pads `9F <pad> 7F` / `8F <pad> 00` (fixed velocity, no expression),
 buttons and encoder pushes `BF <id> 7F|00`, encoders `BF <id> <64±n>` (relative, ReaLearn character
@@ -86,10 +86,11 @@ builds **isomorphic** layouts from two semitone intervals ("the number of semito
 propagated to the entire keyboard") or **free** layouts with a MIDI value and colour per key, and can flip the
 expression axes for a keyboard used sideways. The keyboard stores 8 layouts; pick one on the device with Settings 2
 plus encoder 3. The vendor's own rule is "do not use the Exquis application simultaneously with another software or
-synthesizer". In practice on Windows 11 (multi-client MIDI) the app can stay open next to REAPER **if REAPER was
-started first**: notes still reach REAPER and the layout editor works live. While the app's window is connected it
-repaints the LEDs and takes the buttons for itself, so close it, or reconnect the ReaLearn unit (Apply, or a REAPER
-restart), when you want the REAPER colours and button functions back.
+synthesizer". On Windows 11 (multi-client MIDI) the app can be open next to REAPER **if REAPER was started first**:
+notes still reach REAPER and the layout editor works live. But while the app is connected it takes the buttons for
+itself (measured 2026-09-04: Play on the Exquis no longer reaches REAPER) and repaints the LEDs. Rule of thumb: open
+the app only to edit layouts or settings, then close it; the ReaLearn unit gets its controls and colours back on the
+next Apply or REAPER restart.
 
 A Jankó-style layout is the isomorphic rule "2 semitones along one axis, 1 semitone along the other" (whole tones
 along a row, the next row a semitone up, so every other row repeats). With the keyboard on its side (encoders on the
