@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Copies the Oxygen Pro 61 Rich REAPER Integration into a REAPER resource folder.
+  Copies the MIDI Control Center into a REAPER resource folder.
 
 .DESCRIPTION
   Run from the repo folder in PowerShell 7 (pwsh) or Windows PowerShell 5:
@@ -27,7 +27,7 @@ if (-not (Test-Path (Join-Path $ReaperResourcePath "reaper.ini"))) {
 }
 
 $presetDst  = Join-Path $ReaperResourcePath "Data\helgoboss\realearn\presets\main\oxygen-pro-61"
-$scriptDst  = Join-Path $ReaperResourcePath "Scripts\Oxygen Pro"
+$scriptDst  = Join-Path $ReaperResourcePath "Scripts\MIDI Control Center"
 $startup    = Join-Path $ReaperResourcePath "Scripts\__startup.lua"
 $ctlDst     = Join-Path $ReaperResourcePath "Helgoboss\ReaLearn\controllers.json"
 
@@ -39,9 +39,9 @@ foreach ($sub in @("fcb1010", "exquis")) {
     New-Item -ItemType Directory -Force $d | Out-Null
     Copy-Item (Join-Path $repo "realearn\presets\main\$sub\*.luau") $d -Force
 }
-Copy-Item (Join-Path $repo "reaper\Scripts\Oxygen Pro\*.lua") $scriptDst -Force
-New-Item -ItemType Directory -Force (Join-Path $scriptDst "oxygen_editor") | Out-Null
-Copy-Item (Join-Path $repo "reaper\Scripts\Oxygen Pro\oxygen_editor\*") (Join-Path $scriptDst "oxygen_editor") -Force
+Copy-Item (Join-Path $repo "reaper\Scripts\MIDI Control Center\*.lua") $scriptDst -Force
+New-Item -ItemType Directory -Force (Join-Path $scriptDst "midi_control_center") | Out-Null
+Copy-Item (Join-Path $repo "reaper\Scripts\MIDI Control Center\midi_control_center\*") (Join-Path $scriptDst "midi_control_center") -Force
 Write-Host "Copied ReaLearn presets -> $presetDst"
 Write-Host "Copied ReaScripts       -> $scriptDst"
 
@@ -69,7 +69,7 @@ if (-not (Test-Path $ctlDst)) {
 
 Write-Host ""
 Write-Host "Next, inside REAPER:" -ForegroundColor Cyan
-Write-Host "  1. Actions > Show action list > New action > Load ReaScript > Scripts\Oxygen Pro\Oxygen Pro - First time setup.lua, run it (it also registers the Editor as an action)."
+Write-Host "  1. Actions > Show action list > New action > Load ReaScript > Scripts\MIDI Control Center\MIDI Control Center - Setup.lua, run it (it also registers the Editor as an action)."
 Write-Host "  2. Tick the MIDI device boxes it lists (MIDIIN3 control-only, Oxygen Pro 61 input+control, MIDIOUT3 output)."
 Write-Host "  3. In the Helgobox window: Menu > Instance > Enable global control."
 Write-Host "  4. Restart REAPER. The pads sweep green when the keyboard is armed."

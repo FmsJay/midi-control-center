@@ -86,15 +86,16 @@ hard), run the action `Exquis - Developer mode off` or power-cycle the Exquis.
 The encoders and pushes act on the **selected** track, so the Exquis is the "what I am working on" surface while the
 Oxygen keeps its fixed track banks. The shift comes from the FCB1010 bridge unit, which injects CC 105 on channel 14 into the Exquis input as well as
 into the Oxygen's port (see `FCB1010_SHIFT.md`). Change the layout in the editor (Device switch > Exquis); the preset is generated from `model.exquis` by
-`oxygen_editor/exquis_interpreter.luau`, and `tests/test_exquis.py` keeps it equal to the golden reference.
+`midi_control_center/exquis_interpreter.luau`, and `tests/test_exquis.py` keeps it equal to the golden reference.
 
 ## Layouts, the app, and keeping your layout across restarts
 
 The note layout of the keys is not something REAPER sets; it lives on the Exquis. The Exquis app's Note Layout Editor
 builds **isomorphic** layouts from two semitone intervals ("the number of semitones between two pairs of hexagons,
 propagated to the entire keyboard") or **free** layouts with a MIDI value and colour per key, and can flip the
-expression axes for a keyboard used sideways. The keyboard stores 8 layouts; pick one on the device with Settings 2
-plus encoder 3. The vendor's own rule is "do not use the Exquis application simultaneously with another software or
+expression axes for a keyboard used sideways. The keyboard stores 8 layouts; pick one on the device by holding the second of the two top-left buttons
+(the spec calls it Sound, the guide "Settings (2)") and turning encoder 3. Holding the first (Settings) gives the
+keyboard page with tonic and scale. The vendor's own rule is "do not use the Exquis application simultaneously with another software or
 synthesizer". On Windows 11 (multi-client MIDI) the app can be open next to REAPER **if REAPER was started first**:
 notes still reach REAPER and the layout editor works live. But while the app is connected it takes the buttons for
 itself (measured 2026-09-04: Play on the Exquis no longer reaches REAPER) and repaints the LEDs. Rule of thumb: open
@@ -126,7 +127,7 @@ slots, close the window (that writes them to the keyboard).
 
 To make REAPER put the keyboard into your chosen layout every time it starts: set the layout on the device, then run
 the action **Exquis - Capture layout snapshot** once. It stores the Developer-Mode snapshot (layout + MIDI settings)
-in `oxygen_editor/exquis_snapshot.txt`; from the next Apply on, the Exquis unit restores it on load. Delete the file to
+in `midi_control_center/exquis_snapshot.txt`; from the next Apply on, the Exquis unit restores it on load. Delete the file to
 stop that. Leaving the keyboard's own Settings menu resets its LEDs; the Live watcher notices the refresh message and
 repaints them.
 

@@ -1,6 +1,6 @@
 --- name: Exquis - REAPER control (Developer Mode, pads stay MPE)
 --- realearn_version: 2.18.0
---- author: Oxygen Pro 61 Rich REAPER Integration
+--- author: MIDI Control Center
 --- description: |
 ---     Intuitive Instruments Exquis as a REAPER control surface, next to the Oxygen Pro 61.
 ---     Unit input AND output = the "Exquis" USB port (enable it as input + control + output in REAPER).

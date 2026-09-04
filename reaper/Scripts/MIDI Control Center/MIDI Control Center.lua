@@ -1,22 +1,22 @@
--- @description Oxygen Pro 61 Editor
+-- @description MIDI Control Center
 -- @version 1.0
 -- @author Oxygen Pro 61 integration
 -- @about
 --   ReaImGui editor for the Oxygen Pro 61 ReaLearn layout model. Draws the keyboard panel, lets you
 --   click any control to edit what it does, and applies the generated preset to the running ReaLearn.
---   Needs ReaImGui 0.10 and the modules in ./oxygen_editor (model, generator, apply, state, json).
+--   Needs ReaImGui 0.10 and the modules in ./midi_control_center (model, generator, apply, state, json).
 -- @provides [main] .
 
 -- ================================================================================================
 -- 0. Guards, modules, ImGui context
 -- ================================================================================================
 if not reaper or not reaper.APIExists or not reaper.APIExists('ImGui_GetBuiltinPath') then
-  reaper.MB('This script needs ReaImGui (install it via ReaPack).', 'Oxygen Pro 61 Editor', 0)
+  reaper.MB('This script needs ReaImGui (install it via ReaPack).', 'MIDI Control Center', 0)
   return
 end
 
 local SCRIPT_PATH = debug.getinfo(1, 'S').source:sub(2)
-local DIR = (SCRIPT_PATH:match('^(.*)[/\\]') or '.') .. '/oxygen_editor'
+local DIR = (SCRIPT_PATH:match('^(.*)[/\\]') or '.') .. '/midi_control_center'
 package.path = DIR .. '/?.lua;' .. package.path .. ';' .. reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 
 local ImGui = require 'imgui' '0.10'
@@ -24,12 +24,12 @@ local M     = require 'model'
 local apply = require 'apply'
 local state = require 'state'
 
-local ctx  = ImGui.CreateContext('Oxygen Pro 61 Editor')
+local ctx  = ImGui.CreateContext('MIDI Control Center')
 local font = ImGui.CreateFont('sans-serif', ImGui.FontFlags_None)
 ImGui.Attach(ctx, font)
 local FLT_MIN = ImGui.NumericLimits_Float()
 
-local EXT = 'OxygenPro61Editor'
+local EXT = 'MidiControlCenter'
 
 -- toolbar toggle state
 local _, _, section_id, cmd_id = reaper.get_action_context()
@@ -883,7 +883,7 @@ function XQ.identify()
   end
 end
 
--- ---- snapshot file (oxygen_editor/exquis_snapshot.txt: "# comment" line, then the bytes as hex) ----
+-- ---- snapshot file (midi_control_center/exquis_snapshot.txt: "# comment" line, then the bytes as hex) ----
 function XQ.read_snapshot_file()
   local f = io.open(XQ.SNAPSHOT_PATH, 'rb')
   if not f then return nil end
@@ -2307,7 +2307,7 @@ end
 local function ensure_context()
   if ImGui.ValidatePtr(ctx, 'ImGui_Context*') then return end
   -- ReaImGui collects a context that missed a defer cycle (e.g. after a long Apply); build a fresh one
-  ctx = ImGui.CreateContext('Oxygen Pro 61 Editor')
+  ctx = ImGui.CreateContext('MIDI Control Center')
   font = ImGui.CreateFont('sans-serif', ImGui.FontFlags_None)
   ImGui.Attach(ctx, font)
 end
@@ -2322,13 +2322,19 @@ local function loop()
   if pending_dock then ImGui.SetNextWindowDockID(ctx, pending_dock); pending_dock = nil end
   ImGui.SetNextWindowSize(ctx, 1500, 760, ImGui.Cond_FirstUseEver)
   ImGui.PushFont(ctx, font, 13)
-  local visible, open = ImGui.Begin(ctx, 'Oxygen Pro 61 Editor', true)
+  local visible, open = ImGui.Begin(ctx, 'MIDI Control Center', true)
   if visible then
     reaper.SetExtState(EXT, 'dock', tostring(ImGui.GetWindowDockID(ctx)), true)
     local ok, err = pcall(frame)
     if not ok then
       last_error = tostring(err)
       unwind()
+      -- show the failure instead of a blank window, and switch Follow off since it is the usual trigger
+      if ImGui.ValidatePtr(ctx, 'ImGui_Context*') then
+        ImGui.TextColored(ctx, 0xFF6060FF, 'Editor error (this frame was abandoned): ' .. last_error)
+        ImGui.Text(ctx, 'Follow keyboard has been switched off. Please report the line above.')
+      end
+      view.follow = false
     end
     -- ReaImGui may have collected the context during the frame (a call inside it pumped messages); never
     -- call End/PopFont on a dead context, just rebuild it next cycle

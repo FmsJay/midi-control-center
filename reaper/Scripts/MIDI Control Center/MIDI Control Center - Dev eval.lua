@@ -1,11 +1,11 @@
 -- Oxygen Pro 61: development hook. Runs as a defer loop and executes any Lua file dropped at
---   Scripts/Oxygen Pro/oxygen_editor/dev/eval.lua
+--   Scripts/MIDI Control Center/midi_control_center/dev/eval.lua
 -- inside REAPER, writing whatever the chunk returns (or the error) to dev/result.txt and deleting the input.
 -- Used to test the editor and apply logic without restarting REAPER. Harmless when the folder is empty.
 -- Stop it with the action's toggle (run it again) or by closing REAPER.
 
 local res = reaper.GetResourcePath()
-local DIR = res .. "/Scripts/Oxygen Pro/oxygen_editor/dev"
+local DIR = res .. "/Scripts/MIDI Control Center/midi_control_center/dev"
 local IN, OUT = DIR .. "/eval.lua", DIR .. "/result.txt"
 reaper.RecursiveCreateDirectory(DIR, 0)
 

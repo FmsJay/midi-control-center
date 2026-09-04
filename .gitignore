@@ -5,6 +5,6 @@ midi_capture.txt
 key_probe.txt
 .DS_Store
 Thumbs.db
-reaper/Scripts/Oxygen Pro/oxygen_editor/model.json
-reaper/Scripts/Oxygen Pro/oxygen_editor/dev/
-reaper/Scripts/Oxygen Pro/oxygen_editor/exquis_snapshot.txt
+reaper/Scripts/MIDI Control Center/midi_control_center/model.json
+reaper/Scripts/MIDI Control Center/midi_control_center/dev/
+reaper/Scripts/MIDI Control Center/midi_control_center/exquis_snapshot.txt

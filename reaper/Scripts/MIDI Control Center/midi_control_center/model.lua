@@ -1,4 +1,4 @@
--- Oxygen Pro 61 editor: the layout model.
+-- MIDI Control Center: the layout model.
 --
 -- A model is a plain table (saved as JSON) that fully describes what every control on the keyboard does.
 -- The generator turns it into a ReaLearn Luau preset (see generator.lua + interpreter.luau).

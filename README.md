@@ -1,11 +1,13 @@
-# Oxygen Pro 61 Rich REAPER Integration
+# MIDI Control Center
 
-Two-way integration of the **M-Audio Oxygen Pro 61** with **REAPER**, built on **ReaLearn** (Helgobox).
+A REAPER control-surface toolkit built on **ReaLearn** (Helgobox): a two-way integration of the **M-Audio Oxygen Pro 61**
+(the core), an **Exquis** surface with modes, an **FCB1010** foot-switch hold shift, and an in-REAPER editor that generates all
+of it from one model. It started as the Oxygen Pro 61 integration and grew.
 The keyboard runs in its Ableton "Live" firmware mode, which the host can unlock over sysex. In that mode every
 control reports on one USB port, the fader-button LEDs and the sixteen RGB pads become writable, and REAPER's real
 state drives them: what lights up is what REAPER says is true, never an echo of what you pressed.
 
-**Interactive map of every control:** <https://fmsjay.github.io/oxygen-pro61-rich-reaper-integration/> (GitHub Pages build of `docs/oxygen_live_map.html`, which also opens straight from disk in any browser). Click Shift or Back on the drawn panel, switch Mode, Bank, DAW and pad modes like the hardware. Text version: `docs/LIVE_MODE_MAP.md`.
+**Interactive map of every control:** <https://fmsjay.github.io/midi-control-center/> (GitHub Pages build of `docs/oxygen_live_map.html`, which also opens straight from disk in any browser). Click Shift or Back on the drawn panel, switch Mode, Bank, DAW and pad modes like the hardware. Text version: `docs/LIVE_MODE_MAP.md`.
 
 ## What you get
 
@@ -53,7 +55,7 @@ The keyboard shows up as four MIDI ports. This integration uses:
 | `MIDIOUT3 (Oxygen Pro 61)` | port 3 out: sysex, LED and pad colour writes. REAPER: output enabled |
 
 Leave `MIDIIN2/4` and `MIDIOUT2/4` disabled. On macOS the names are different (`Oxygen Pro 61 USB MIDI`,
-`Oxygen Pro 61 Mackie/HUI`, `Oxygen Pro 61 Editor`); edit the names at the top of the watcher and the setup script.
+`Oxygen Pro 61 Mackie/HUI`, `MIDI Control Center`); edit the names at the top of the watcher and the setup script.
 
 ## Install on a fresh REAPER
 
@@ -64,11 +66,11 @@ Leave `MIDIIN2/4` and `MIDIOUT2/4` disabled. On macOS the names are different (`
        .\install.ps1 -ReaperResourcePath "D:\REAPER"       # the folder that contains reaper.ini
 
    Without the parameter it targets `%APPDATA%\REAPER`. The script copies the ReaLearn presets to
-   `Data\helgoboss\realearn\presets\main\oxygen-pro-61\`, the ReaScripts to `Scripts\Oxygen Pro\`, and appends
+   `Data\helgoboss\realearn\presets\main\oxygen-pro-61\`, the ReaScripts to `Scripts\MIDI Control Center\`, and appends
    the watcher block to `Scripts\__startup.lua`. Without PowerShell, copy those files by hand; the layout of this
    repo mirrors the REAPER resource folder (`realearn/` maps to `Data/helgoboss/realearn/`).
 4. Start REAPER. Actions > Show action list > New action > Load ReaScript >
-   `Scripts\Oxygen Pro\Oxygen Pro - First time setup.lua`, then run it. It finds the keyboard's device numbers,
+   `Scripts\MIDI Control Center\MIDI Control Center - Setup.lua`, then run it. It finds the keyboard's device numbers,
    writes `Helgoboss\ReaLearn\controllers.json`, patches the drum-injection device inside the preset, puts Helgobox
    in the monitoring FX chain and opens Preferences > MIDI Devices with a checklist.
 5. Tick the checklist: `MIDIIN3` control-only, `Oxygen Pro 61` input + control, `MIDIOUT3` output. Remove any
@@ -95,7 +97,7 @@ keyboard port 3  --CC/notes-->  REAPER (control-only input)  -->  ReaLearn unit 
 - `realearn/presets/main/oxygen-pro-61/live.preset.luau` is the whole layout: one ReaLearn main preset written in
   Luau (about 660 mappings generated from helpers). Bank, Mode, knob function, pad mode, layout and the Back layer
   are compartment parameters; groups and `Modifier`/`Bank` activation conditions select what is live.
-- `reaper/Scripts/Oxygen Pro/Oxygen Pro - Live watcher.lua` polls for the `MIDIOUT3` device, sends the three
+- `reaper/Scripts/MIDI Control Center/Oxygen Pro - Live watcher.lua` polls for the `MIDIOUT3` device, sends the three
   sysex messages when the keyboard appears, then asks ReaLearn to repaint. It also does the things ReaLearn cannot:
   timed pad flashes (layout sweep, bank number, Back checkerboard) and tap tempo. Because REAPER's recent-input API
   cannot see control-only devices, ReaLearn echoes the relevant presses into the port-1 input for it.
@@ -108,7 +110,7 @@ The measured protocol (sysex, message map, LED palette, firmware quirks) is in `
 
 ## The editor (change anything without touching code)
 
-`Scripts/Oxygen Pro/Oxygen Pro - Editor.lua` (registered as an action by the first-time setup script; needs ReaImGui)
+`Scripts/MIDI Control Center/MIDI Control Center.lua` (registered as an action by the first-time setup script; needs ReaImGui)
 opens a window with the keyboard drawn as it sits in front of you. Click any control and the inspector on the right
 lets you set what it does:
 
@@ -129,10 +131,10 @@ lets you set what it does:
 
 **Apply** generates the ReaLearn preset from the model, writes a timestamped `.bak` of the previous one next to it,
 writes the new preset and reloads the running unit in place, no REAPER restart. **Save** stores the model as
-`oxygen_editor/model.json` (loaded automatically next time), **Reset to default** returns to the shipped layout
+`midi_control_center/model.json` (loaded automatically next time), **Reset to default** returns to the shipped layout
 (Apply afterwards to put it on the keyboard). Ctrl+Z / Ctrl+Y undo and redo.
 
-How it fits together: `oxygen_editor/model.lua` (the data model, validation, the default layout),
+How it fits together: `midi_control_center/model.lua` (the data model, validation, the default layout),
 `generator.lua` + `interpreter.luau` / `exquis_interpreter.luau` (model -> ReaLearn Luau; each generated preset is the model
 literal plus the interpreter, so ReaLearn, the editor and the tests run the same code), `apply.lua` (backup, write,
 reload), `state.lua` (live state, replayed from the presses the preset echoes into the port-1 input).
@@ -145,7 +147,7 @@ and stay notes).
 
 ## Customising by hand
 
-`live.preset.luau` is generated; edit `oxygen_editor/interpreter.luau` (the part after `local MODEL = ...`) for behaviour the
+`live.preset.luau` is generated; edit `midi_control_center/interpreter.luau` (the part after `local MODEL = ...`) for behaviour the
 model cannot express, then Apply from the editor. Action IDs are REAPER defaults; check yours in Actions > Show action list. Colours
 must come from the 13-entry palette in `docs/PROTOCOL.md`; anything else shows as off.
 
@@ -193,8 +195,8 @@ None of these is needed for the integration to work.
 realearn/presets/main/oxygen-pro-61/   live.preset.luau, pads.preset.luau     -> Data/helgoboss/realearn/presets/main/oxygen-pro-61/
 realearn/presets/main/fcb1010/, exquis/  the foot-switch shift bridge and the Exquis surface
 realearn/controllers.template.json      managed controllers                     -> Helgoboss/ReaLearn/controllers.json
-reaper/Scripts/Oxygen Pro/              editor, watcher, first-time setup, LED unlock, flash test, dev hook, Exquis dev-mode off -> Scripts/Oxygen Pro/
-reaper/Scripts/Oxygen Pro/oxygen_editor/ model, generator, interpreter, apply, state, json (the editor's engine)
+reaper/Scripts/MIDI Control Center/              editor, watcher, first-time setup, LED unlock, flash test, dev hook, Exquis dev-mode off -> Scripts/MIDI Control Center/
+reaper/Scripts/MIDI Control Center/midi_control_center/ model, generator, interpreter, apply, state, json (the editor's engine)
 reaper/Scripts/__startup.oxygen-snippet.lua   the block install.ps1 appends to Scripts/__startup.lua
 docs/                                   LIVE_MODE_MAP.md, oxygen_live_map.html (interactive), PROTOCOL.md, FCB1010_SHIFT.md, EXQUIS.md, research notes, legacy DAW-mode notes
 tools/                                  oxygen_led_unlock.py, midi_capture.py, key_probe.py, exquis_layouts.py; legacy/ has the abandoned DAW-preset builder

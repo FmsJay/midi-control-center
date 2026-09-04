@@ -1,6 +1,6 @@
 # Oxygen Pro 61 + ReaLearn — what is built and what is left to click
 
-> **New machine or fresh keyboard:** run `Scripts/Oxygen Pro/Oxygen Pro - First time setup.lua` from REAPER's
+> **New machine or fresh keyboard:** run `Scripts/MIDI Control Center/MIDI Control Center - Setup.lua` from REAPER's
 > Actions list. It finds the device numbers, rewrites `controllers.json` and the preset's drum-injection device,
 > adds Helgobox to the monitoring FX chain and lists the three preference boxes to tick. Then restart REAPER.
 > No Python is needed any more; the watcher is a ReaScript started by `__startup.lua`.
@@ -25,8 +25,8 @@ Built on 2026-09-03. Layout: `OXYGEN_PRO_61_MAP.md`. Facts behind every choice: 
 | `Utility/oxygen-pro-tools/oxygen_led_unlock.py` | One-shot LED unlock (`--restore` hands LEDs back to firmware) |
 | `Utility/oxygen-pro-tools/oxygen_led_watch.py` | Runs beside REAPER: unlocks on every keyboard power-on and asks ReaLearn to repaint |
 | `REAPER/Scripts/__startup.lua` (Oxygen block) | Launches the watcher when REAPER starts |
-| `REAPER/Scripts/Oxygen Pro/Oxygen Pro - Setup ReaLearn.lua` | Adds Helgobox to the monitoring FX chain and opens it |
-| `REAPER/Scripts/Oxygen Pro/Oxygen Pro - LED unlock.lua` | Manual re-unlock action |
+| `REAPER/Scripts/MIDI Control Center/Oxygen Pro - Setup ReaLearn.lua` | Adds Helgobox to the monitoring FX chain and opens it |
+| `REAPER/Scripts/MIDI Control Center/Oxygen Pro - LED unlock.lua` | Manual re-unlock action |
 | `REAPER/Data/helgoboss/realearn/presets/main/oxygen-pro-61/surface.preset.luau` | ReaLearn main preset, port 3 unit (336 mappings) |
 | `REAPER/Data/helgoboss/realearn/presets/main/oxygen-pro-61/pads.preset.luau` | ReaLearn main preset, port 1 unit (176 mappings) |
 | `REAPER/Helgoboss/ReaLearn/controllers.json` | Two managed controllers so ReaLearn creates both units by itself |
@@ -45,7 +45,7 @@ Built on 2026-09-03. Layout: `OXYGEN_PRO_61_MAP.md`. Facts behind every choice: 
    - `Oxygen Pro 61`: enable input and control (pads must reach ReaLearn and LoopCanvas bindings).
    - Leave MIDIIN2/MIDIIN4/MIDIOUT2/MIDIOUT4 disabled.
 2. Preferences > Control/OSC/web: **remove** the Mackie Control Universal entry (it would fight ReaLearn for port 3).
-3. Actions > Load ReaScript > `Scripts/Oxygen Pro/Oxygen Pro - Setup ReaLearn.lua`, run it.
+3. Actions > Load ReaScript > `Scripts/MIDI Control Center/Oxygen Pro - Setup ReaLearn.lua`, run it.
    In the ReaLearn window that opens: **Menu > Instance > Enable global control**. Two units appear with their presets.
 4. Restart REAPER once so `__startup.lua` starts the watcher (or run `Oxygen Pro - LED unlock.lua`).
 

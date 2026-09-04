@@ -1,7 +1,7 @@
 """The Exquis section of the model must generate a preset that behaves exactly like the reference Exquis preset
 (tests/golden/exquis.preset.golden.luau, originally the hand-written preset verified on hardware 2026-09-04).
 
-Usage: python tests/test_exquis.py [path/to/oxygen_editor] [reference preset] [--update-golden]
+Usage: python tests/test_exquis.py [path/to/midi_control_center] [reference preset] [--update-golden]
 """
 import json, os, sys
 import lupa

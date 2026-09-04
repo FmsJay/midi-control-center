@@ -1,6 +1,6 @@
 --- name: FCB1010 - hold shift bridge
 --- realearn_version: 2.18.0
---- author: Oxygen Pro 61 Rich REAPER Integration
+--- author: MIDI Control Center
 --- description: |
 ---     Turns one Behringer FCB1010 foot switch into a TRUE hold modifier for the Oxygen Pro 61 unit.
 ---     This unit listens on the MIDI interface the pedal board is plugged into. When the configured switch is
@@ -18,7 +18,7 @@
 --!strict
 
 local SOURCE = { kind = "note", channel = 15, number = 60 }     -- FCB1010 NOTE preset: note 60 on MIDI channel 16 (0-based 15)
-local MIDIIN3_DEVICE = 16                                         -- rewritten by "Oxygen Pro - First time setup.lua"
+local MIDIIN3_DEVICE = 16                                         -- rewritten by "MIDI Control Center - Setup.lua"
 local EXQUIS_DEVICE = 8                                           -- REAPER input number of "Exquis" (nil to skip); rewritten by the setup script
 local SHIFT_CC, SHIFT_CHANNEL = 105, 13                           -- what the Oxygen preset expects (channel 14, 0-based 13)
 

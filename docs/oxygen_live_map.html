@@ -307,14 +307,14 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
         <li>The keyboard runs in its Ableton "Live" firmware mode. Nothing is stored on the keyboard; the ReaScript <code>Oxygen Pro - Live watcher.lua</code>, started by <code>__startup.lua</code>, switches it into Live mode and unlocks the LEDs when REAPER starts and after every keyboard power-on, then asks ReaLearn to repaint. No Python required.</li>
         <li>One ReaLearn unit does everything: <code>presets/main/oxygen-pro-61/live.preset.luau</code> on <code>MIDIIN3</code> (control-only) / <code>MIDIOUT3</code>, created automatically from <code>Helgoboss/ReaLearn/controllers.json</code>.</li>
         <li>The screen keeps saying Ableton: nothing arriving from the host redraws it in this mode. The pad sweep is the layout indicator.</li>
-        <li>New machine: run <code>Scripts/Oxygen Pro/Oxygen Pro - First time setup.lua</code>. <code>oxygen_led_unlock.py --restore</code> returns the keyboard to its normal presets.</li>
+        <li>New machine: run <code>Scripts/MIDI Control Center/MIDI Control Center - Setup.lua</code>. <code>oxygen_led_unlock.py --restore</code> returns the keyboard to its normal presets.</li>
       </ul>
     </div>
     <div class="card notes">
       <h3>Where the pieces live</h3>
       <ul>
         <li><code>DAW/Utility/oxygen-pro-tools/</code>: <code>LIVE_MODE_MAP.md</code>, <code>SETUP_STEPS.md</code>, scripts, and dated backups of both the Live-mode and the earlier DAW-mode setups.</li>
-        <li><code>REAPER/Scripts/Oxygen Pro/</code>: the watcher, the first-time setup, the manual unlock and a one-shot flash test.</li>
+        <li><code>REAPER/Scripts/MIDI Control Center/</code>: the watcher, the first-time setup, the manual unlock and a one-shot flash test.</li>
         <li>Every measurement behind these choices is in the <code>reaper</code> skill's FINDINGS, F-0011 through F-0023. Keyboard-side facts come from the Oxygen Pro Series User Guide v1.1.</li>
       </ul>
     </div>

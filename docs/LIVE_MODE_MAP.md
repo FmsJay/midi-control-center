@@ -1,13 +1,13 @@
 # Oxygen Pro 61 in Live mode — the host-defined layout (current design, 2026-09-03)
 
 The keyboard runs in its Ableton "Live" firmware mode (sysex `F0 00 01 05 7F 00 00 6D 00 01 02 F7`), put there by
-`REAPER/Scripts/Oxygen Pro/Oxygen Pro - Live watcher.lua` (started from `__startup.lua`) at every REAPER start and
+`REAPER/Scripts/MIDI Control Center/Oxygen Pro - Live watcher.lua` (started from `__startup.lua`) at every REAPER start and
 after every keyboard power-on, together with the LED unlock. In that mode everything reports on USB port 3, the
 keyboard does no bank paging of its own, and ReaLearn holds all state. One ReaLearn unit:
 `Data/helgoboss/realearn/presets/main/oxygen-pro-61/live.preset.luau`, input `MIDIIN3` (control-only in REAPER),
 output `MIDIOUT3`. Interactive version of this page: `oxygen_live_map.html`.
 
-Measured message map: `PROTOCOL.md`. Everything here is the shipped default; the editor (`Oxygen Pro - Editor.lua`) can change all of it.
+Measured message map: `PROTOCOL.md`. Everything here is the shipped default; the editor (`MIDI Control Center.lua`) can change all of it.
 
 ## Global (every bank, every layout)
 
@@ -62,9 +62,9 @@ changes, and on any change made with the mouse, an action or automation.
 
 | File | Role |
 |---|---|
-| `REAPER/Scripts/Oxygen Pro/Oxygen Pro - Live watcher.lua` | keeps the keyboard in Live mode; auto-started |
-| `REAPER/Scripts/Oxygen Pro/Oxygen Pro - First time setup.lua` | new machine: device numbers, controllers.json, preset constant, monitoring FX, prefs checklist |
-| `REAPER/Scripts/Oxygen Pro/Oxygen Pro - LED unlock.lua`, `oxygen_led_unlock.py [--restore]` | manual re-arm / return to factory presets (Python optional) |
+| `REAPER/Scripts/MIDI Control Center/Oxygen Pro - Live watcher.lua` | keeps the keyboard in Live mode; auto-started |
+| `REAPER/Scripts/MIDI Control Center/MIDI Control Center - Setup.lua` | new machine: device numbers, controllers.json, preset constant, monitoring FX, prefs checklist |
+| `REAPER/Scripts/MIDI Control Center/Oxygen Pro - LED unlock.lua`, `oxygen_led_unlock.py [--restore]` | manual re-arm / return to factory presets (Python optional) |
 | `REAPER/Helgoboss/ReaLearn/controllers.json` | managed controllers -> auto units |
 | `backup-2026-09-03-livemode/`, `backup-2026-09-03-dawmode/` | snapshots |
 

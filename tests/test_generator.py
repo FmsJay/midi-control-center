@@ -1,6 +1,6 @@
-"""Offline tests for the Oxygen Pro 61 editor model + generator (needs `pip install lupa`).
+"""Offline tests for the MIDI Control Center model + generator (needs `pip install lupa`).
 
-Usage:  python tests/test_generator.py [path/to/oxygen_editor] [path/to/reference preset] [--update-golden]
+Usage:  python tests/test_generator.py [path/to/midi_control_center] [path/to/reference preset] [--update-golden]
 
 1. The default model must generate a preset that BEHAVES exactly like the reference preset
    (tests/golden/live.preset.golden.luau, a frozen snapshot; the original hand-written preset was the first reference):
@@ -15,7 +15,7 @@ import lupa
 HERE = os.path.dirname(os.path.abspath(__file__))
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 UPDATE_GOLDEN = "--update-golden" in sys.argv
-EDITOR_DIR = ARGS[0] if len(ARGS) > 0 else os.path.join(HERE, "..", "reaper", "Scripts", "Oxygen Pro", "oxygen_editor")
+EDITOR_DIR = ARGS[0] if len(ARGS) > 0 else os.path.join(HERE, "..", "reaper", "Scripts", "Oxygen Pro", "midi_control_center")
 GOLDEN = os.path.join(HERE, "golden", "live.preset.golden.luau")
 REFERENCE = ARGS[1] if len(ARGS) > 1 else GOLDEN
 EDITOR_DIR = os.path.abspath(EDITOR_DIR).replace("\\", "/")
@@ -126,7 +126,7 @@ def main():
     assert len(echoes) == 11, "expected 11 state-echo mappings, got %d" % len(echoes)
     if UPDATE_GOLDEN:
         with open(GOLDEN, "w", encoding="utf-8", newline="\n") as f:
-            f.write(gen.generate(model, L.table(date="shipped default", author="Oxygen Pro 61 editor (shipped default)")))
+            f.write(gen.generate(model, L.table(date="shipped default", author="MIDI Control Center (shipped default)")))
         print("golden updated:", GOLDEN)
     reference_is_golden = os.path.abspath(REFERENCE) == os.path.abspath(GOLDEN)
     if not reference_is_golden:

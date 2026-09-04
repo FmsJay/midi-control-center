@@ -1,4 +1,4 @@
--- Oxygen Pro 61 editor: live state of the running ReaLearn unit.
+-- MIDI Control Center: live state of the running ReaLearn unit.
 --
 -- The unit is an "auto unit" created from controllers.json, so its compartment parameters are NOT the FX
 -- parameters of the Helgobox instance (those belong to the instance's own main unit and read "Main p1"...).
@@ -19,7 +19,7 @@ local MODE_CC = { [0x39] = 0, [0x3A] = 1, [0x3B] = 2, [0x3C] = 3, [0x3D] = 4 }
 local KNOB_CC = { [0x55] = 0, [0x56] = 1, [0x57] = 2, [0x53] = 3 }
 
 function S.set_counts(c)
-    if c then for k, v in pairs(c) do if v and v > 0 then counts[k] = v end end end
+    if c then for k, v in pairs(c) do if type(v) == "number" and v > 0 then counts[k] = v end end end
 end
 
 local function handle(cc, val)

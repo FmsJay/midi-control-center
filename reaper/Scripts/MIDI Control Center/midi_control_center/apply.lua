@@ -1,4 +1,4 @@
--- Oxygen Pro 61 editor: write the generated preset into REAPER and make ReaLearn pick it up.
+-- MIDI Control Center: write the generated preset into REAPER and make ReaLearn pick it up.
 -- REAPER-only (uses the reaper API). Every apply writes live.preset.<timestamp>.bak next to the preset before
 -- replacing it, so any earlier state can be copied back by hand; "Reset to default" + Apply restores the shipped layout.
 
@@ -85,7 +85,7 @@ function A.apply(model, opts)
     if #errors > 0 then return false, "model is not valid: " .. errors[1] end
     local dev = A.port1_device()
     if dev then model.port1_input_device = dev end
-    local text = generator.generate(model, { author = opts.author or "Oxygen Pro 61 editor" })
+    local text = generator.generate(model, { author = opts.author or "MIDI Control Center" })
     -- self-check: the generated text must load and return a preset table
     local preset, err = generator.evaluate(text)
     if not preset then return false, "generated preset does not run: " .. tostring(err) end
@@ -95,7 +95,7 @@ function A.apply(model, opts)
     if not ok then return false, "could not write " .. A.PRESET .. ": " .. tostring(werr) end
     model_mod.save(model, A.MODEL_PATH)
     local exquis_note = ""
-    local xtext = generator.generate_exquis(model, { author = opts.author or "Oxygen Pro 61 editor" })
+    local xtext = generator.generate_exquis(model, { author = opts.author or "MIDI Control Center" })
     if xtext then
         local xpreset, xerr = generator.evaluate(xtext)
         if not xpreset then return false, "generated Exquis preset does not run: " .. tostring(xerr) end

@@ -3,12 +3,12 @@
 -- M-Audio's "LED mode = software" sysex. Fire the sender once per REAPER
 -- start, no wait. Safe if the keyboard is absent (the script just exits).
 -- Re-run manually with
--- Scripts/Oxygen Pro/Oxygen Pro - LED unlock.lua after re-plugging it.
+-- Scripts/MIDI Control Center/Oxygen Pro - LED unlock.lua after re-plugging it.
 --
 do
   -- Pure-ReaScript watcher: puts the keyboard into Live mode + software LEDs now and after
   -- every power-on, then asks ReaLearn to repaint. Runs as a defer loop inside REAPER.
-  local watcher = reaper.GetResourcePath() .. "/Scripts/Oxygen Pro/Oxygen Pro - Live watcher.lua"
+  local watcher = reaper.GetResourcePath() .. "/Scripts/MIDI Control Center/Oxygen Pro - Live watcher.lua"
   local ok, err = pcall(dofile, watcher)
   if not ok then reaper.ShowConsoleMsg("[oxygen] watcher failed: " .. tostring(err) .. "\n") end
 end

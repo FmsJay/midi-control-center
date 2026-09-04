@@ -1,5 +1,5 @@
 -- Exquis: capture the keyboard's current layout + MIDI settings as a Developer-Mode snapshot and store it next to
--- the editor (oxygen_editor/exquis_snapshot.txt). From then on every Apply embeds it in the Exquis preset, and
+-- the editor (midi_control_center/exquis_snapshot.txt). From then on every Apply embeds it in the Exquis preset, and
 -- the ReaLearn unit restores it each time it loads (REAPER start, Apply), so the Exquis always comes up in the
 -- layout you captured. Run again to overwrite; delete the file to stop restoring.
 --
@@ -7,7 +7,7 @@
 -- Needs the Exquis enabled as REAPER input and output; the reply arrives within a second.
 
 local res = reaper.GetResourcePath()
-local OUT_PATH = res .. "/Scripts/Oxygen Pro/oxygen_editor/exquis_snapshot.txt"
+local OUT_PATH = res .. "/Scripts/MIDI Control Center/midi_control_center/exquis_snapshot.txt"
 local function log(s) reaper.ShowConsoleMsg("[exquis] " .. s .. "\n") end
 
 local out

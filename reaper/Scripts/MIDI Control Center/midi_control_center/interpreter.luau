@@ -1,4 +1,4 @@
--- ==== Oxygen Pro 61 editor: preset interpreter ==================================================
+-- ==== MIDI Control Center: preset interpreter ==================================================
 -- This chunk is appended verbatim to a generated preset after `local MODEL = { ... }`. It turns the
 -- model into ReaLearn parameters, groups and mappings. It runs inside ReaLearn's Luau sandbox, so it
 -- uses only string.format, ipairs, pairs, table.insert and math (no table.concat, no require).
