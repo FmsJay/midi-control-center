@@ -165,7 +165,11 @@ To check a change compiles before restarting, run it through any Lua 5.4 / Luau 
   selected-track volume/pan/mute/solo/arm, tempo, markers on the slider, RGB LEDs from REAPER state, and the same
   foot-switch shift as the keyboard. Verified on firmware 3.0.0. Start REAPER before the Exquis app if you keep the app open.
 
-Both are added by the first-time setup script when it finds the devices (edit the two names at its top if yours differ).
+- **Strich SDP-120 piano** (`docs/SDP120.md`). Not a controller, but a noisy MIDI citizen: a keep-alive sysex every second,
+  its metronome and rhythms as channel-10 notes, GS sysex on reverb changes. A small ReaLearn unit swallows what you do not
+  want before it reaches your tracks, with flags for each kind of message.
+
+All three are added by the first-time setup script when it finds the devices (edit the names at its top if yours differ).
 
 ## Optional extras
 
@@ -193,7 +197,7 @@ None of these is needed for the integration to work.
 
 ```
 realearn/presets/main/oxygen-pro-61/   live.preset.luau, pads.preset.luau     -> Data/helgoboss/realearn/presets/main/oxygen-pro-61/
-realearn/presets/main/fcb1010/, exquis/  the foot-switch shift bridge and the Exquis surface
+realearn/presets/main/fcb1010/, exquis/, sdp120/  the foot-switch shift bridge, the Exquis surface, the piano's input filter
 realearn/controllers.template.json      managed controllers                     -> Helgoboss/ReaLearn/controllers.json
 reaper/Scripts/MIDI Control Center/              editor, watcher, first-time setup, LED unlock, flash test, dev hook, Exquis dev-mode off -> Scripts/MIDI Control Center/
 reaper/Scripts/MIDI Control Center/midi_control_center/ model, generator, interpreter, apply, state, json (the editor's engine)
