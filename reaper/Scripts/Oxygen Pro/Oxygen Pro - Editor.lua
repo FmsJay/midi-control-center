@@ -83,6 +83,7 @@ local view = { layout = 1, mode = 1, bank = 1, layer = 'normal', follow = false,
 local live = nil                 -- last state.read()
 local picker = { active = false, uid = nil, resolver = nil, field = nil }
 local last_error = nil
+local pending_apply, apply_running = false, false
 local pending_dock = tonumber(reaper.GetExtState(EXT, 'dock'))
 if pending_dock == 0 then pending_dock = nil end
 local name_cache = {}
@@ -591,6 +592,7 @@ end
 local function do_apply()
   local ok, msg = apply.apply(model)
   if ok and state.reset then state.reset() end   -- ReaLearn parameters restart at 0 after a reload
+  apply_running = false
   status.text, status.col = tostring(msg), ok and C.ok or C.err
   errors = M.validate(model)
 end
@@ -690,7 +692,7 @@ local function draw_topbar()
   if zr then view.zoom = nz; reaper.SetExtState(EXT, 'zoom', tostring(nz), true) end
   ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
 
-  if ImGui.Button(ctx, 'Apply') then do_apply() end
+  if ImGui.Button(ctx, 'Apply') and not apply_running then apply_running = true; pending_apply = true end
   ImGui.SetItemTooltip(ctx, 'Generate the preset, back up the current one, write it and reload ReaLearn')
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, 'Save') then do_save() end
@@ -1338,7 +1340,21 @@ local function frame()
   end
 end
 
+local function ensure_context()
+  if ImGui.ValidatePtr(ctx, 'ImGui_Context*') then return end
+  -- ReaImGui collects a context that missed a defer cycle (e.g. after a long Apply); build a fresh one
+  ctx = ImGui.CreateContext('Oxygen Pro 61 Editor')
+  font = ImGui.CreateFont('sans-serif', ImGui.FontFlags_None)
+  ImGui.Attach(ctx, font)
+end
+
 local function loop()
+  if pending_apply then
+    pending_apply = false
+    local ok, err = pcall(do_apply)
+    if not ok then status.text, status.col = 'Apply failed: ' .. tostring(err), C.err; apply_running = false end
+  end
+  ensure_context()
   if pending_dock then ImGui.SetNextWindowDockID(ctx, pending_dock); pending_dock = nil end
   ImGui.SetNextWindowSize(ctx, 1500, 760, ImGui.Cond_FirstUseEver)
   ImGui.PushFont(ctx, font, 13)
