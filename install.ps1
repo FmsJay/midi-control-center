@@ -35,7 +35,7 @@ New-Item -ItemType Directory -Force $presetDst | Out-Null
 New-Item -ItemType Directory -Force $scriptDst | Out-Null
 Copy-Item (Join-Path $repo "realearn\presets\main\oxygen-pro-61\*.luau") $presetDst -Force
 foreach ($sub in @("fcb1010", "exquis")) {
-    $d = Join-Path $ReaperResourcePath "Data\helgobossealearn\presets\main\$sub"
+    $d = Join-Path $ReaperResourcePath "Data\helgoboss\realearn\presets\main\$sub"
     New-Item -ItemType Directory -Force $d | Out-Null
     Copy-Item (Join-Path $repo "realearn\presets\main\$sub\*.luau") $d -Force
 }
