@@ -13,7 +13,7 @@ Measured message map: `PROTOCOL.md`. **LoopCanvas** below refers to a looper tha
 
 | Control | Function |
 |---|---|
-| Mode button | what the fader buttons and their LEDs mean: Off (dark), Record, Select, Mute, Solo |
+| Mode button | what the fader buttons and their LEDs mean: Off, Record, Select, Mute, Solo. In Off mode the buttons are the keyboard's own ARP / Latch / Chord / Scale / time-division keys and LEDs 1-4 show those four toggles |
 | Shift + pad 9 / 10 / 11 | knob function: Pan / Device (focused FX params 1-8) / Send 1 of each track |
 | (CC 83, if any button sends it) | knob function: sends 1-8 of the selected track |
 | Bank < / Bank > | fader bank 1-4; the pad with the new bank number flashes white for half a second (ReaLearn echoes CC 110/111 to port 1, the watcher flashes). After Back: previous / next marker |

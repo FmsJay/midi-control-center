@@ -35,6 +35,8 @@ New-Item -ItemType Directory -Force $presetDst | Out-Null
 New-Item -ItemType Directory -Force $scriptDst | Out-Null
 Copy-Item (Join-Path $repo "realearn\presets\main\oxygen-pro-61\*.luau") $presetDst -Force
 Copy-Item (Join-Path $repo "reaper\Scripts\Oxygen Pro\*.lua") $scriptDst -Force
+New-Item -ItemType Directory -Force (Join-Path $scriptDst "oxygen_editor") | Out-Null
+Copy-Item (Join-Path $repo "reaper\Scripts\Oxygen Pro\oxygen_editor\*") (Join-Path $scriptDst "oxygen_editor") -Force
 Write-Host "Copied ReaLearn presets -> $presetDst"
 Write-Host "Copied ReaScripts       -> $scriptDst"
 
@@ -62,7 +64,7 @@ if (-not (Test-Path $ctlDst)) {
 
 Write-Host ""
 Write-Host "Next, inside REAPER:" -ForegroundColor Cyan
-Write-Host "  1. Actions > Show action list > New action > Load ReaScript > Scripts\Oxygen Pro\Oxygen Pro - First time setup.lua, run it."
+Write-Host "  1. Actions > Show action list > New action > Load ReaScript > Scripts\Oxygen Pro\Oxygen Pro - First time setup.lua, run it (it also registers the Editor as an action)."
 Write-Host "  2. Tick the MIDI device boxes it lists (MIDIIN3 control-only, Oxygen Pro 61 input+control, MIDIOUT3 output)."
 Write-Host "  3. In the Helgobox window: Menu > Instance > Enable global control."
 Write-Host "  4. Restart REAPER. The pads sweep green when the keyboard is armed."

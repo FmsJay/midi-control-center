@@ -63,6 +63,14 @@ power-off. Live mode survives pressing Preset and DAW on the keyboard (they swit
 - **No MIDI clock out** in Internal tempo mode. Keep Clock = External so the arpeggiator and Note Repeat follow
   REAPER's clock on port 1 (they pause while REAPER is stopped).
 - **The OLED is not host-writable** in Live mode (control-mode sysex and echoed control messages change nothing).
+- **The fader buttons keep their local functions in Live mode** when no Mode is selected: ARP, Latch, Chord, Scale, time
+  divisions. The firmware gives no sign of it on its own LEDs, and an arpeggiator left on with Clock = External silences
+  the keys whenever REAPER is stopped. The generated preset mirrors those four toggles on LEDs 1-4 in Off mode.
+- **ReaLearn auto units expose no readable parameters**: the Helgobox instance's FX parameters belong to its own main
+  unit ("Main p1"...), not to units created from controllers.json. To follow a unit's state from a script, have the
+  preset echo state-changing presses into the port-1 input (`SendMidi` -> `InputDevice`) and read them back with
+  `MIDI_GetRecentInputEvent`. A `vst_chunk` get/set round trip on the Helgobox instance makes it re-read a changed
+  preset file without restarting REAPER (verified).
 
 ## LED feedback (write to MIDIOUT3, after the unlock)
 

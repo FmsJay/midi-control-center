@@ -88,7 +88,18 @@ else
   log("Helgobox is in the monitoring FX chain (slot " .. (idx + 1) .. ") and its window is open.")
 end
 
--- 5. the human part --------------------------------------------------------------------------------------------
+-- 5. register the editor and the watcher as actions (so they appear in the Actions list without a manual Load) ----
+for _, name in ipairs({ "Oxygen Pro - Editor.lua", "Oxygen Pro - Live watcher.lua", "Oxygen Pro - LED unlock.lua" }) do
+  local path = res .. "/Scripts/Oxygen Pro/" .. name
+  local f = io.open(path, "r")
+  if f then
+    f:close()
+    local cmd = reaper.AddRemoveReaScript(true, 0, path, true)
+    log(cmd ~= 0 and ("Registered action: " .. name) or ("Could not register " .. name))
+  end
+end
+
+-- 6. the human part --------------------------------------------------------------------------------------------
 log("")
 log("Now tick these (the API cannot):")
 log("  Preferences > MIDI Devices:")
@@ -99,5 +110,5 @@ log("    leave MIDIIN2/MIDIIN4/MIDIOUT2/MIDIOUT4 disabled")
 log("  Preferences > Control/OSC/web: remove any Mackie Control Universal / HUI entry using the Oxygen ports")
 log("  ReaLearn window: Menu > Instance > 'Enable global control'")
 log("Then restart REAPER. The Live watcher in __startup.lua puts the keyboard into Live mode and unlocks the LEDs.")
-log("Reference: docs/LIVE_MODE_MAP.md and docs/oxygen_live_map.html in the oxygen-pro61-rich-reaper-integration repo")
+log("Reference: Utility/oxygen-pro-tools/LIVE_MODE_MAP.md and oxygen_live_map.html")
 reaper.ViewPrefs(0, "MIDI Devices")

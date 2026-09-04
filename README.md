@@ -28,6 +28,10 @@ state drives them: what lights up is what REAPER says is true, never an echo of 
   insert track.
 - **Aftertouch, chord mode, scale mode, arpeggiator, note repeat** keep working; they are keyboard-local.
 - **Self-healing**: a ReaScript watcher re-arms Live mode and the LEDs every time the keyboard is powered on.
+- **Off mode shows the keyboard's own toggles**: with no Mode LED lit, fader-button LEDs 1-4 mirror ARP, Latch, Chord and
+  Scale, so an arpeggiator left on (which silences the keys while REAPER is stopped) is visible.
+- **An editor inside REAPER** (ReaImGui) to remap everything, add layouts, pad modes, banks and latch modifiers, and apply
+  without restarting. See *The editor* below.
 
 ## Requirements
 
@@ -35,6 +39,7 @@ state drives them: what lights up is what REAPER says is true, never an echo of 
 |---|---|---|
 | REAPER | 7.79, Windows 11 | Any 7.x should work. macOS/Linux untested (port names differ, see below) |
 | Helgobox (ReaLearn) | 2.18.2 | <https://www.helgoboss.org/projects/helgobox/> - install the VST3 or VST2 into REAPER |
+| ReaImGui | 0.10 | only for the editor window; install via ReaPack |
 | Oxygen Pro 61 firmware | 2.1.2 | Older firmware may not have the Live mode. Update with M-Audio's installer |
 
 That is all the core needs: no Python, no extra MIDI drivers, no other extensions. See *Optional extras* below for the diagnostic tools and the work-in-progress looper layout.
@@ -101,11 +106,45 @@ keyboard port 3  --CC/notes-->  REAPER (control-only input)  -->  ReaLearn unit 
 
 The measured protocol (sysex, message map, LED palette, firmware quirks) is in `docs/PROTOCOL.md`.
 
-## Customising
+## The editor (change anything without touching code)
 
-Edit `live.preset.luau` and restart REAPER (or reload the preset in ReaLearn). The file is plain Luau with a
-`mappings` table; the helpers at the top (`cc_button`, `note`, `paint`, `state_pad`, `action_pad`, `mixer_grid`,
-`back_combo`) cover most needs. Action IDs are REAPER defaults; check yours in Actions > Show action list. Colours
+`Scripts/Oxygen Pro/Oxygen Pro - Editor.lua` (registered as an action by the first-time setup script; needs ReaImGui)
+opens a window with the keyboard drawn as it sits in front of you. Click any control and the inspector on the right
+lets you set what it does:
+
+- **Buttons** (transport, << >>, Bank, pad side buttons, encoder press, Back, DAW): nothing, a built-in function
+  (transport, bank/pad-mode/layout stepping, tap tempo), any REAPER action picked with REAPER's own action picker
+  or typed as a `_NAMED` command, or **modifier latch**: the button arms a layer and every other button can get a
+  different function in that layer (the Layer combo). Any button can be a modifier; two at most.
+- **Encoder turn**: browse tracks, zoom, or two actions (clockwise / anticlockwise).
+- **Pads**: per layout and pad mode. A pad mode is drums, mixer (8 tracks mute/solo), free (one colour), or custom,
+  where each pad is an action, a transport toggle or a track state toggle with its own colour and on-colour.
+- **Fader banks** (up to 8): 8 tracks starting anywhere, focused FX, or free.
+- **Layouts** (tabs): add as many as you like; the DAW button steps through them, the pad sweep colour is per layout.
+- **Follow keyboard** makes the drawn panel track the real one: layout, pad mode, bank, Mode, knob function and
+  armed layer update as you press buttons on the hardware.
+
+**Apply** generates the ReaLearn preset from the model, backs up the previous one, writes it and reloads the
+running unit in place, no REAPER restart. The first apply also keeps the original hand-written preset as
+`live.preset.hand-written.luau`; **Restore hand-written** puts it back. **Save** stores the model as
+`oxygen_editor/model.json` (loaded automatically next time), **Reset to default** returns to the shipped layout.
+Ctrl+Z / Ctrl+Y undo and redo.
+
+How it fits together: `oxygen_editor/model.lua` (the data model, validation, the default layout),
+`generator.lua` + `interpreter.luau` (model -> ReaLearn Luau; the generated preset is the model literal plus the
+interpreter, so ReaLearn, the editor and `tests/test_generator.py` run the same code), `apply.lua` (backup, write,
+reload), `state.lua` (live state, replayed from the presses the preset echoes into the port-1 input).
+`tests/test_generator.py` proves the default model behaves exactly like the hand-written preset.
+
+Two things the editor cannot give you, because the hardware cannot: hold-modifiers (the firmware reports nothing
+for a second button while one is held, hence the latch), and piano keys as controls (they are notes on port 1
+and stay notes).
+
+## Customising by hand
+
+`live.preset.luau` is generated; edit `oxygen_editor/interpreter.luau` (the part after `local MODEL = ...`) for behaviour the
+model cannot express, then Apply from the editor. `live.preset.hand-written.luau` is the original single-file preset
+if you prefer that style. Action IDs are REAPER defaults; check yours in Actions > Show action list. Colours
 must come from the 13-entry palette in `docs/PROTOCOL.md`; anything else shows as off.
 
 To check a change compiles before restarting, run it through any Lua 5.4 / Luau interpreter:
@@ -142,10 +181,12 @@ None of these is needed for the integration to work.
 ```
 realearn/presets/main/oxygen-pro-61/   live.preset.luau, pads.preset.luau     -> Data/helgoboss/realearn/presets/main/oxygen-pro-61/
 realearn/controllers.template.json      managed controllers                     -> Helgoboss/ReaLearn/controllers.json
-reaper/Scripts/Oxygen Pro/              watcher, first-time setup, LED unlock, flash test -> Scripts/Oxygen Pro/
+reaper/Scripts/Oxygen Pro/              editor, watcher, first-time setup, LED unlock, flash test, dev hook -> Scripts/Oxygen Pro/
+reaper/Scripts/Oxygen Pro/oxygen_editor/ model, generator, interpreter, apply, state, json (the editor's engine)
 reaper/Scripts/__startup.oxygen-snippet.lua   the block install.ps1 appends to Scripts/__startup.lua
 docs/                                   LIVE_MODE_MAP.md, oxygen_live_map.html (interactive), PROTOCOL.md, legacy DAW-mode notes
 tools/                                  oxygen_led_unlock.py, midi_capture.py, key_probe.py; legacy/ has the abandoned DAW-preset builder
+tests/test_generator.py                 offline proof that the generated preset equals the hand-written one (needs lupa)
 install.ps1                             copies everything into a REAPER resource folder
 ```
 
