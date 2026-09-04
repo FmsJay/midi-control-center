@@ -516,11 +516,14 @@ local function push_id(s) ImGui.PushID(ctx, s); stk.id = stk.id + 1 end
 local function pop_id() ImGui.PopID(ctx); stk.id = stk.id - 1 end
 local function push_col(idx, col) ImGui.PushStyleColor(ctx, idx, col); stk.col = stk.col + 1 end
 local function pop_col(n) n = n or 1; ImGui.PopStyleColor(ctx, n); stk.col = stk.col - n end
+local function push_wrap() ImGui.PushTextWrapPos(ctx, 0.0); stk.wrap = (stk.wrap or 0) + 1 end
+local function pop_wrap() ImGui.PopTextWrapPos(ctx); stk.wrap = stk.wrap - 1 end
 local function begin_disabled(d) ImGui.BeginDisabled(ctx, d); stk.disabled = stk.disabled + 1 end
 local function end_disabled() ImGui.EndDisabled(ctx); stk.disabled = stk.disabled - 1 end
 
 -- after a pcall failure inside the frame, close whatever is still open so the next frame is clean
 local function unwind()
+  while (stk.wrap or 0) > 0 do ImGui.PopTextWrapPos(ctx); stk.wrap = stk.wrap - 1 end
   while stk.combo > 0 do ImGui.EndCombo(ctx); stk.combo = stk.combo - 1 end
   while stk.disabled > 0 do ImGui.EndDisabled(ctx); stk.disabled = stk.disabled - 1 end
   while stk.id > 0 do ImGui.PopID(ctx); stk.id = stk.id - 1 end
@@ -1216,7 +1219,6 @@ local function draw_topbar_exquis()
   local lpick = combo_ids('##xlayer', EXQUIS_LAYERS, view.xlayer, 170)
   if lpick then view.xlayer = lpick end
   ImGui.SetItemTooltip(ctx, 'Normal: modes[N].buttons / encoders.  Shift: modes[N].shift, active while the FCB1010 foot switch is held.\nEncoder pushes and slider zones have no shift layer.')
-  ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, EXQUIS_HINT)
 
   -- row 2: slider mode + follow + zoom
   ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Slider:'); ImGui.SameLine(ctx)
@@ -2298,8 +2300,10 @@ local function frame()
     end_child()
   end
   ImGui.SameLine(ctx)
-  if begin_child('inspector', 0, 0, ImGui.ChildFlags_Borders, ImGui.WindowFlags_HorizontalScrollbar) then
+  if begin_child('inspector', 0, 0, ImGui.ChildFlags_Borders) then
+    push_wrap()
     draw_inspector()
+    pop_wrap()
     end_child()
   end
 end
