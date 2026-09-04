@@ -5,7 +5,7 @@ The keyboard runs in its Ableton "Live" firmware mode, which the host can unlock
 control reports on one USB port, the fader-button LEDs and the sixteen RGB pads become writable, and REAPER's real
 state drives them: what lights up is what REAPER says is true, never an echo of what you pressed.
 
-Interactive map of every control: open `docs/oxygen_live_map.html` in a browser. Text version: `docs/LIVE_MODE_MAP.md`.
+**Interactive map of every control:** <https://fmsjay.github.io/oxygen-pro61-rich-reaper-integration/> (GitHub Pages build of `docs/oxygen_live_map.html`, which also opens straight from disk in any browser). Click Shift or Back on the drawn panel, switch Mode, Bank, DAW and pad modes like the hardware. Text version: `docs/LIVE_MODE_MAP.md`.
 
 ## What you get
 
