@@ -12,6 +12,7 @@ local res = reaper.GetResourcePath()
 -- optional extra devices: the MIDI interface the FCB1010 is plugged into (name pattern, Lua plain find) and the Exquis
 local FCB_INPUT_MATCH = "UR22"
 local EXQUIS_NAME = "Exquis"
+local SDP120_INPUT_NAME = "General MIDI"   -- the Strich SDP-120 piano shows up under this generic name; "" to skip
 local function log(s) reaper.ShowConsoleMsg(s .. "\n") end
 reaper.ShowConsoleMsg("")
 log("=== Oxygen Pro 61 first-time setup ===")
@@ -75,6 +76,18 @@ if exq_in and exq_out then
   log(string.format("Exquis = input %d, output %d", exq_in, exq_out))
 else
   log("Exquis not found as both input and output: Exquis unit not added")
+end
+local sdp_in = SDP120_INPUT_NAME ~= "" and find_in(SDP120_INPUT_NAME) or nil
+if sdp_in then
+  extra = extra .. string.format([[,
+    {
+      "id": "sdp120-filter",
+      "name": "Strich SDP-120 sysex filter (%s)",
+      "enabled": true,
+      "connection": { "kind": "Midi", "input_port": %d },
+      "default_main_preset": "sdp120/filter"
+    }]], SDP120_INPUT_NAME, sdp_in)
+  log(string.format("SDP-120 piano '%s' = input %d (sysex filter unit added)", SDP120_INPUT_NAME, sdp_in))
 end
 local ctl = string.format([[{
   "controllers": [
