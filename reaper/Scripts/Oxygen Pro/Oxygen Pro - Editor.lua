@@ -71,11 +71,12 @@ local KNOB_SHORT = { 'Pan', 'FX', 'Send1', 'SelSnd' }
 local EXQUIS_RGBA = {}
 for _, n in ipairs(M.EXQUIS_RGB) do EXQUIS_RGBA[n] = RGBA[n] or RGBA.off end
 local EXQUIS_BUILTIN_SHORT = { transport_play = 'Play/stop', transport_record = 'Record', transport_loop = 'Repeat',
-                               transport_stop = 'Stop', tap_tempo = 'Tap tempo' }
+                               transport_stop = 'Stop', tap_tempo = 'Tap tempo', mode_next = 'Mode +', mode_prev = 'Mode -' }
 local EXQUIS_ENCODER_SHORT = { none = '-', selected_volume = 'Sel vol', selected_pan = 'Sel pan', master_volume = 'Master vol',
                                selected_send = 'Sel send', browse_tracks = 'Browse trk', tempo = 'Tempo', fx_param = 'FX param',
                                zoom = 'Zoom', actions = 'Actions' }
-local EXQUIS_PUSH_SHORT = { none = '-', selected_mute = 'Sel mute', selected_solo = 'Sel solo', selected_arm = 'Sel arm', tap_tempo = 'Tap tempo' }
+local EXQUIS_PUSH_SHORT = { none = '-', selected_mute = 'Sel mute', selected_solo = 'Sel solo', selected_arm = 'Sel arm', tap_tempo = 'Tap tempo',
+                            mode_next = 'Mode +', mode_prev = 'Mode -' }
 local EXQUIS_ELEM = {}      -- button id -> element / CC number
 for _, b in ipairs(M.EXQUIS_BUTTONS) do EXQUIS_ELEM[b.id] = b.elem end
 local EXQUIS_ENC_CC, EXQUIS_PUSH_CC, EXQUIS_SLIDER_CC = { 110, 111, 112, 113 }, { 114, 115, 116, 117 }, { 80, 81, 82, 83, 84, 85 }
@@ -105,6 +106,7 @@ XQ.KEY_OFF = 0x2A2B31FF
 -- 2. State
 -- ================================================================================================
 local model, model_source = apply.load_model()
+if type(model) == 'table' and type(model.exquis) == 'table' then M.exquis_migrate(model.exquis) end   -- flat Exquis -> modes[1]
 local errors = M.validate(model)
 local status = { text = 'Loaded ' .. tostring(model_source), col = nil }
 local undo_stack, redo_stack = {}, {}
@@ -116,7 +118,9 @@ local view = { layout = 1, mode = 1, bank = 1, layer = 'normal', follow = false,
                zoom = tonumber(reaper.GetExtState(EXT, 'zoom')) or 1.0,
                show_modifiers = false,    -- "Modifiers..." management section at the top of the inspector
                device = reaper.GetExtState(EXT, 'device') == 'exquis' and 'exquis' or 'oxygen',   -- Device switch
-               xlayer = 'normal' }        -- Exquis layer being edited: 'normal' | 'shift'
+               xlayer = 'normal',         -- Exquis layer being edited: 'normal' | 'shift'
+               xmode = 1,                 -- Exquis mode being edited: index into model.exquis.modes (1-based, clamped)
+               show_xmode = false }       -- "Mode settings" section (name / colour) at the top of the Exquis inspector
 local live = nil                 -- last state.read()
 local picker = { active = false, uid = nil, resolver = nil, field = nil }
 local last_error = nil
@@ -220,6 +224,11 @@ local function clamp_view()
     for _, id in ipairs(modifier_ids()) do if id == view.layer then found = true; break end end
     if not found then view.layer = 'normal' end
   end
+  -- Exquis mode index (the section itself is only created on demand by exquis(), never here)
+  local x = model.exquis
+  if type(x) == 'table' and type(x.modes) == 'table' and #x.modes > 0 then
+    view.xmode = math.max(1, math.min(math.floor(tonumber(view.xmode) or 1), #x.modes))
+  end
 end
 
 local function ensure_button(id)
@@ -240,23 +249,40 @@ local function name_of(items, id)
 end
 
 -- ---- Exquis section of the model (created on demand; every sub-table nil-safe) ----------------------
+-- model.exquis = { enabled, shift_cc, shift_channel, port1_input_device, slider_mode, modes = { mode, ... } }; an old flat
+-- section (buttons / encoders at the top level) is lifted into modes[1] here so every code path sees `modes`
 local function exquis()
   if type(model.exquis) ~= 'table' then model.exquis = M.exquis_default() end
-  local x = model.exquis
-  x.buttons  = x.buttons  or {}
-  x.encoders = x.encoders or {}
-  x.pushes   = x.pushes   or {}
-  x.slider   = x.slider   or {}
-  x.shift    = x.shift    or { buttons = {}, encoders = {} }
-  x.shift.buttons  = x.shift.buttons  or {}
-  x.shift.encoders = x.shift.encoders or {}
+  local x = M.exquis_migrate(model.exquis)
+  if type(x.modes) ~= 'table' or #x.modes == 0 then x.modes = { M.exquis_mode_track() } end
+  view.xmode = math.max(1, math.min(math.floor(tonumber(view.xmode) or 1), #x.modes))
   return x
 end
--- button / encoder tables of an Exquis layer ('normal' | 'shift')
-local function xbuttons_of(layer)  local x = exquis(); return layer == 'shift' and x.shift.buttons or x.buttons end
-local function xencoders_of(layer) local x = exquis(); return layer == 'shift' and x.shift.encoders or x.encoders end
+-- the Exquis mode being edited (model.exquis.modes[view.xmode]); a mode may lack shift / slider / pushes: created here
+local function cur_xmode()
+  local x = exquis()
+  local m = x.modes[view.xmode]
+  if type(m) ~= 'table' then m = { name = 'Mode ' .. view.xmode }; x.modes[view.xmode] = m end
+  m.buttons  = m.buttons  or {}
+  m.encoders = m.encoders or {}
+  m.pushes   = m.pushes   or {}
+  m.slider   = m.slider   or {}
+  m.shift    = m.shift    or {}
+  m.shift.buttons  = m.shift.buttons  or {}
+  m.shift.encoders = m.shift.encoders or {}
+  return m
+end
+-- button / encoder tables of an Exquis layer ('normal' | 'shift') in the mode being edited
+local function xbuttons_of(layer)  local m = cur_xmode(); return layer == 'shift' and m.shift.buttons or m.buttons end
+local function xencoders_of(layer) local m = cur_xmode(); return layer == 'shift' and m.shift.encoders or m.encoders end
 local function xlayer_name(layer) return layer == 'shift' and 'Shift (FCB1010 held)' or 'Normal' end
-local function xpath(layer, field) return 'model.exquis.' .. (layer == 'shift' and 'shift.' or '') .. field end
+local function xpath(layer, field) return 'model.exquis.modes[' .. view.xmode .. '].' .. (layer == 'shift' and 'shift.' or '') .. field end
+-- a button builtin / push kind that steps through the Exquis modes on the device (its LED shows the mode colour)
+local function is_mode_step(a)
+  if type(a) ~= 'table' then return false end
+  local k = a.kind == 'builtin' and a.builtin or a.kind
+  return k == 'mode_next' or k == 'mode_prev'
+end
 
 -- ---- REAPER lookups ------------------------------------------------------------------------------
 local function action_name(cmd)
@@ -365,13 +391,19 @@ local function half_rgba(rgba)
   local r = ((rgba >> 24) & 0xFF) // 2; local g = ((rgba >> 16) & 0xFF) // 2; local b = ((rgba >> 8) & 0xFF) // 2
   return (r << 24) | (g << 16) | (b << 8) | 0xFF
 end
--- display colour of an Exquis assignment: LED name -> RGBA, halved when dim; nil colour = off
-local function xcolour(a)
+-- display colour of an Exquis assignment: LED name -> RGBA, halved when dim; nil colour = off. `mode_col` (RGBA) is
+-- what a mode_next / mode_prev assignment without its own colour shows: the mode's colour, as the interpreter paints it
+local function xcolour(a, mode_col)
+  if mode_col and is_mode_step(a) and not a.colour then return a.dim and half_rgba(mode_col) or mode_col end
   local col = (type(a) == 'table' and a.colour and EXQUIS_RGBA[a.colour]) or RGBA.off
   if type(a) == 'table' and a.dim then col = half_rgba(col) end
   return col
 end
-local function has_colour(a) return type(a) == 'table' and a.colour ~= nil and a.colour ~= 'off' end
+local function has_colour(a)
+  if type(a) ~= 'table' then return false end
+  if a.colour == nil then return is_mode_step(a) end   -- mode steps are lit in the mode colour
+  return a.colour ~= 'off'
+end
 
 -- fader / knob / fader-button meaning for a bank
 local function fader_text(b, i)
@@ -711,6 +743,26 @@ local function remove_bank()
   after_edit('Removed bank')
 end
 
+-- Exquis modes (model.exquis.modes, 1..8): "+" copies the mode being edited, "-" removes it (never below one)
+local function add_xmode()
+  local x = exquis()
+  if #x.modes >= 8 then status.text, status.col = 'At most 8 Exquis modes', C.err; return end
+  push_undo()
+  local new = M.copy(cur_xmode())
+  new.name = 'Mode ' .. (#x.modes + 1)
+  x.modes[#x.modes + 1] = new
+  view.xmode = #x.modes
+  after_edit('Added Exquis mode ' .. new.name .. ' (copy of the current mode)')
+end
+local function remove_xmode()
+  local x = exquis()
+  if #x.modes <= 1 then status.text, status.col = 'At least one Exquis mode is required', C.err; return end
+  push_undo()
+  local m = table.remove(x.modes, view.xmode)
+  view.xmode = math.max(1, math.min(view.xmode, #x.modes))
+  after_edit('Removed Exquis mode ' .. tostring(m and m.name or '?'))
+end
+
 -- kind change of a button assignment (normal layer allows modifier)
 local function set_button_kind(a, kind, id)
   if kind == 'none' then set_table(a, { kind = 'none' })
@@ -1003,11 +1055,15 @@ local function do_reload()
   push_undo()
   local m, src = apply.load_model()
   model = m; name_cache = {}
+  if type(model.exquis) == 'table' then M.exquis_migrate(model.exquis) end
+  view.xmode = 1
   after_edit('Reloaded ' .. tostring(src))
 end
 local function do_reset()
   push_undo()
   model = M.default()
+  if type(model.exquis) == 'table' then M.exquis_migrate(model.exquis) end
+  view.xmode = 1
   after_edit('Reset to the shipped default layout')
 end
 
@@ -1112,23 +1168,59 @@ local function draw_topbar_oxygen()
   ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
 end
 
--- Exquis rows of the top bar (enabled + layer, then zoom); ends with SameLine like the Oxygen rows
+-- Exquis rows of the top bar (enabled + mode + layer, then slider mode / follow / zoom); ends with SameLine like the Oxygen rows
 local function draw_topbar_exquis()
   local x = exquis()
-  -- row 1: enabled + layer
+  -- row 1: enabled + mode + layer
   local rv, ne = ImGui.Checkbox(ctx, 'Exquis enabled', x.enabled == true)
   if rv and ne ~= (x.enabled == true) then
     push_undo(); x.enabled = ne; after_edit(ne and 'Exquis section enabled (written on Apply)' or 'Exquis section disabled (no Exquis preset is written)')
   end
   ImGui.SetItemTooltip(ctx, EXQUIS_HINT)
   ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+
+  -- mode: combo over model.exquis.modes, add / remove, settings toggle
+  ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Mode:'); ImGui.SameLine(ctx)
+  local mitems = {}
+  for i, m in ipairs(x.modes) do mitems[i] = { id = i, name = i .. ': ' .. tostring(m.name or ('Mode ' .. i)) } end
+  local mpick = combo_ids('##xmode', mitems, view.xmode, 170)
+  if mpick then view.xmode = mpick; view.follow = false end
+  ImGui.SetItemTooltip(ctx, 'Exquis mode being edited (model.exquis.modes[N]): a full set of button / encoder / push / slider assignments.\nA button or push set to "Next / Previous Exquis mode" steps through the modes on the device.')
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, '+##addxmode') then add_xmode() end
+  ImGui.SetItemTooltip(ctx, 'Add an Exquis mode (copy of the current one, at most 8)')
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, '-##delxmode') then remove_xmode() end
+  ImGui.SetItemTooltip(ctx, 'Remove the current Exquis mode (at least one stays)')
+  ImGui.SameLine(ctx)
+  local xset_open = view.show_xmode   -- capture before the click toggles it, so push and pop always match
+  if xset_open then push_col(ImGui.Col_Button, 0x4A6FA5FF); push_col(ImGui.Col_ButtonHovered, 0x5A80B8FF); push_col(ImGui.Col_ButtonActive, 0x3A5F95FF) end
+  if ImGui.Button(ctx, 'Mode settings##xmodeset') then view.show_xmode = not view.show_xmode end
+  if xset_open then pop_col(3) end
+  ImGui.SetItemTooltip(ctx, 'Show / hide the mode name and colour in the inspector')
+  ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+
   ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Layer:'); ImGui.SameLine(ctx)
   local lpick = combo_ids('##xlayer', EXQUIS_LAYERS, view.xlayer, 170)
   if lpick then view.xlayer = lpick end
-  ImGui.SetItemTooltip(ctx, 'Normal: model.exquis.buttons / encoders.  Shift: model.exquis.shift, active while the FCB1010 foot switch is held.\nEncoder pushes and slider zones have no shift layer.')
+  ImGui.SetItemTooltip(ctx, 'Normal: modes[N].buttons / encoders.  Shift: modes[N].shift, active while the FCB1010 foot switch is held.\nEncoder pushes and slider zones have no shift layer.')
   ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, EXQUIS_HINT)
-  -- row 2: zoom
-  ImGui.AlignTextToFramePadding(ctx)
+
+  -- row 2: slider mode + follow + zoom
+  ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Slider:'); ImGui.SameLine(ctx)
+  local smode = x.slider_mode == 'zones' and 'zones' or 'native'
+  local spick = combo_ids('##xslidermode', M.EXQUIS_SLIDER_MODES, smode, 300)
+  if spick and spick ~= smode then
+    push_undo(); x.slider_mode = spick
+    if spick == 'native' and sel.dev == 'exquis' and sel.kind == 'slider' then sel = { kind = nil } end
+    after_edit(spick == 'native' and 'Slider: native arpeggiator rate (the six zones are not taken over)' or 'Slider: six zones as REAPER buttons (CC 80-85)')
+  end
+  ImGui.SetItemTooltip(ctx, 'model.exquis.slider_mode: native keeps the keyboard\'s own arpeggiator-rate slider; zones takes the slider over as six buttons (per mode)')
+  ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+  local fr, nf = ImGui.Checkbox(ctx, 'Follow keyboard##xfollow', view.follow)
+  if fr then view.follow = nf end
+  ImGui.SetItemTooltip(ctx, 'Show the Exquis mode of the running ReaLearn unit (the device echoes its mode presses)')
+  ImGui.SameLine(ctx)
   ImGui.SetNextItemWidth(ctx, 110)
   local zr, nz = ImGui.SliderDouble(ctx, 'Zoom##xzoom', view.zoom, 0.6, 1.8, '%.2f')
   if zr then view.zoom = nz; reaper.SetExtState(EXT, 'zoom', tostring(nz), true) end
@@ -1451,12 +1543,27 @@ local function draw_exquis_panel()
   G.z = view.zoom
   G.dl = ImGui.GetWindowDrawList(ctx)
   local x = exquis()
+  local m = cur_xmode()
+  local mcol = EXQUIS_RGBA[m.colour or 'white'] or RGBA.off   -- mode colour: LED of mode_next / mode_prev controls
   local layer = view.xlayer
   local shift = layer == 'shift'
-  local btns, encs, pushes, slider = xbuttons_of(layer), xencoders_of(layer), x.pushes, x.slider
+  local btns, encs, pushes, slider = xbuttons_of(layer), xencoders_of(layer), m.pushes, m.slider
+  local native = x.slider_mode ~= 'zones'   -- the keyboard keeps its arpeggiator-rate slider
   local lname = xlayer_name(layer)
   rect(0, 0, EXQ_W, EXQ_H, C.bg, 12)
   ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(14), Y(6), C.ink, 'INTUITIVE INSTRUMENTS   Exquis')
+  -- header line: mode swatch + name, live mode, layer
+  rect(180, 7, 10, 10, mcol, 2, C.line)
+  local mtitle = string.format('Mode %d/%d: %s', view.xmode, #x.modes, tostring(m.name or '?'))
+  ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(195), Y(6), C.ink, mtitle)
+  if live and view.follow then
+    local tw = measure(mtitle, 9 * G.z)
+    ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(195) + tw + 10 * G.z, Y(6), C.live,
+      string.format('LIVE  mode %d', math.floor(tonumber(live.xmode) or 0) + 1))
+  elseif view.follow then
+    local tw = measure(mtitle, 9 * G.z)
+    ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(195) + tw + 10 * G.z, Y(6), C.err, 'no Helgobox')
+  end
   ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(EXQ_W - 200), Y(6), shift and C.armed or C.muted,
     shift and 'Shift layer (FCB1010 held)' or 'Normal layer')
   if not x.enabled then
@@ -1481,7 +1588,7 @@ local function draw_exquis_panel()
     local py = cy + r + 22
     local pclicked, phovered = hit('xpush' .. i, cx - 65, py, 130, 14)
     rect(cx - 65, py, 130, 14, phovered and C.btn_hover or C.btn_static, 3, phovered and C.white or C.line)
-    ImGui.DrawList_AddCircleFilled(G.dl, X(cx - 58), Y(py + 7), 3 * G.z, xcolour(p))          -- push LED
+    ImGui.DrawList_AddCircleFilled(G.dl, X(cx - 58), Y(py + 7), 3 * G.z, xcolour(p, mcol))    -- push LED (mode colour for mode steps)
     label(cx - 52, py, 117, 14, 'Push: ' .. xpush_text(p), C.ink, 8)
     if xsel('push', i) then outline(cx - 65, py, 130, 14, C.sel, 2, 3) end
     if hovered then
@@ -1497,22 +1604,30 @@ local function draw_exquis_panel()
     if pclicked then xselect('push', i) end
   end
 
-  -- slider: six zones (CC 80-85)
-  ImGui.DrawList_AddTextEx(G.dl, font, 8 * G.z, X(40), Y(126), C.muted, 'Slider zones 1-6  (CC 80-85, no shift layer)')
+  -- slider: six zones (CC 80-85) when taken over; greyed out (not clickable) while the slider stays native
+  ImGui.DrawList_AddTextEx(G.dl, font, 8 * G.z, X(40), Y(126), C.muted,
+    native and 'Slider: native (arpeggiator rate), not taken over  -  choose "zones" in the top bar for six buttons'
+           or 'Slider zones 1-6  (CC 80-85, no shift layer)')
   for k = 1, 6 do
     local a = slider[k]
     local zx, zy, zw, zh = 40 + (k - 1) * 97, 138, 90, 30
-    local clicked, hovered = hit('xsl' .. k, zx, zy, zw, zh)
-    local col = xcolour(a)
-    local fill = has_colour(a) and half_rgba(col) or (hovered and C.btn_hover or C.btn)
-    rect(zx, zy, zw, zh, fill, 4, hovered and C.white or C.line)
-    rect(zx + 4, zy + zh - 6, zw - 8, 3, col, 1)                                             -- zone LED
-    local ink = ink_for(fill)
-    ImGui.DrawList_AddTextEx(G.dl, font, 7 * G.z, X(zx + 3), Y(zy + 2), ink, tostring(k))
-    label(zx + 8, zy + 3, zw - 12, 16, xpush_text(a, false, M.EXQUIS_SLIDER_KINDS), ink, 9)
-    if xsel('slider', k) then outline(zx, zy, zw, zh, C.sel, 2, 4) end
-    if hovered then ImGui.SetTooltip(ctx, string.format('Slider zone %d (CC %d, no shift layer): %s', k, EXQUIS_SLIDER_CC[k], xpush_text(a, true, M.EXQUIS_SLIDER_KINDS))) end
-    if clicked then xselect('slider', k) end
+    if native then
+      rect(zx, zy, zw, zh, C.btn_static, 4, C.line)
+      ImGui.DrawList_AddTextEx(G.dl, font, 7 * G.z, X(zx + 3), Y(zy + 2), C.dim, tostring(k))
+      label(zx + 4, zy + 4, zw - 8, zh - 8, 'native (arpeggiator rate)', C.dim, 8)
+    else
+      local clicked, hovered = hit('xsl' .. k, zx, zy, zw, zh)
+      local col = xcolour(a)
+      local fill = has_colour(a) and half_rgba(col) or (hovered and C.btn_hover or C.btn)
+      rect(zx, zy, zw, zh, fill, 4, hovered and C.white or C.line)
+      rect(zx + 4, zy + zh - 6, zw - 8, 3, col, 1)                                           -- zone LED
+      local ink = ink_for(fill)
+      ImGui.DrawList_AddTextEx(G.dl, font, 7 * G.z, X(zx + 3), Y(zy + 2), ink, tostring(k))
+      label(zx + 8, zy + 3, zw - 12, 16, xpush_text(a, false, M.EXQUIS_SLIDER_KINDS), ink, 9)
+      if xsel('slider', k) then outline(zx, zy, zw, zh, C.sel, 2, 4) end
+      if hovered then ImGui.SetTooltip(ctx, string.format('Slider zone %d (CC %d, no shift layer): %s', k, EXQUIS_SLIDER_CC[k], xpush_text(a, true, M.EXQUIS_SLIDER_KINDS))) end
+      if clicked then xselect('slider', k) end
+    end
   end
 
   -- buttons: Record, Loop, Clips, Play/Stop  /  Down, Up, Undo, Redo
@@ -1522,7 +1637,7 @@ local function draw_exquis_panel()
       local a = btns[id]
       local bx, by, bw, bh = 40 + (j - 1) * 150, 188 + (ri - 1) * 64, 130, 52
       local clicked, hovered = hit('xbtn_' .. id, bx, by, bw, bh)
-      local col = xcolour(a)
+      local col = xcolour(a, mcol)   -- mode_next / mode_prev without a colour of its own: the mode colour
       local fill = has_colour(a) and half_rgba(col) or (hovered and C.btn_hover or C.btn)
       rect(bx, by, bw, bh, fill, 6, hovered and C.white or C.line)
       rect(bx + 6, by + 5, bw - 12, 4, col, 2)                                                -- button LED
@@ -1887,7 +2002,7 @@ local function inspect_exquis_button(id, layer)
   local elem = EXQUIS_ELEM[id]
   if not elem then ImGui.Text(ctx, 'Unknown Exquis button ' .. tostring(id)); return end
   ImGui.SeparatorText(ctx, 'Exquis ' .. name_of(M.EXQUIS_BUTTONS, id) .. '  (CC ' .. elem .. ')')
-  ImGui.TextDisabled(ctx, xlayer_name(layer) .. ' layer: ' .. xpath(layer, 'buttons.' .. id))
+  ImGui.TextDisabled(ctx, string.format('Mode "%s", %s layer: %s', tostring(cur_xmode().name or view.xmode), xlayer_name(layer), xpath(layer, 'buttons.' .. id)))
   if layer == 'shift' then
     ImGui.TextDisabled(ctx, 'Fires while the FCB1010 foot switch is held (shift CC ' .. tostring(exquis().shift_cc or 105) .. ')')
   end
@@ -1909,6 +2024,9 @@ local function inspect_exquis_button(id, layer)
   if a.kind == 'builtin' then
     local pick = combo_ids('Function##xfn_' .. uid, M.EXQUIS_BUTTON_BUILTINS, a.builtin, -FLT_MIN)
     if pick then push_undo(); a.builtin = pick; after_edit() end
+    if is_mode_step(a) then
+      ImGui.TextWrapped(ctx, string.format('Steps through the %d Exquis mode(s) on the device (wrapping). LED: the mode colour ("Mode settings" in the top bar) unless a colour is chosen below.', #exquis().modes))
+    end
   elseif a.kind == 'action' then
     command_widget(uid, resolver, 'command')
   elseif a.kind ~= nil and a.kind ~= 'none' then
@@ -1919,7 +2037,7 @@ end
 
 local function inspect_exquis_encoder(i, layer)
   ImGui.SeparatorText(ctx, string.format('Exquis encoder %d  (CC %d)', i, EXQUIS_ENC_CC[i] or 0))
-  ImGui.TextDisabled(ctx, xlayer_name(layer) .. ' layer: ' .. xpath(layer, 'encoders[' .. i .. ']'))
+  ImGui.TextDisabled(ctx, string.format('Mode "%s", %s layer: %s', tostring(cur_xmode().name or view.xmode), xlayer_name(layer), xpath(layer, 'encoders[' .. i .. ']')))
   local uid = 'xenc_' .. layer .. '_' .. i
   local function resolver()
     local t = xencoders_of(layer)
@@ -1970,15 +2088,17 @@ local function edit_exquis_trigger(uid, resolver, kinds)
     local tp = combo_strings('Transport##' .. uid, M.TRANSPORT_ACTIONS, a.action or 'PlayStop', -FLT_MIN)
     if tp then push_undo(); a.action = tp; after_edit() end
     ImGui.TextDisabled(ctx, 'Toggle; the LED follows the transport state')
+  elseif is_mode_step(a) then
+    ImGui.TextWrapped(ctx, string.format('Steps through the %d Exquis mode(s) on the device (wrapping). LED: the mode colour ("Mode settings" in the top bar) unless a colour is chosen below.', #exquis().modes))
   end
   exquis_colour_dim(uid, a)
 end
 
 local function inspect_exquis_push(i)
   ImGui.SeparatorText(ctx, string.format('Exquis encoder %d push  (CC %d)', i, EXQUIS_PUSH_CC[i] or 0))
-  ImGui.TextDisabled(ctx, 'model.exquis.pushes[' .. i .. ']  (no shift layer)')
+  ImGui.TextDisabled(ctx, string.format('Mode "%s": %s  (no shift layer)', tostring(cur_xmode().name or view.xmode), xpath('normal', 'pushes[' .. i .. ']')))
   edit_exquis_trigger('xpush_' .. i, function()
-    local t = exquis().pushes
+    local t = cur_xmode().pushes
     if type(t[i]) ~= 'table' then t[i] = { kind = 'none' } end
     return t[i]
   end, M.EXQUIS_PUSH_KINDS)
@@ -1986,9 +2106,13 @@ end
 
 local function inspect_exquis_slider(k)
   ImGui.SeparatorText(ctx, string.format('Exquis slider zone %d  (CC %d)', k, EXQUIS_SLIDER_CC[k] or 0))
-  ImGui.TextDisabled(ctx, 'model.exquis.slider[' .. k .. ']  (no shift layer)')
+  if exquis().slider_mode ~= 'zones' then
+    ImGui.TextWrapped(ctx, 'The slider is native (the keyboard\'s arpeggiator-rate slider) and its zones are not taken over. Choose "zones" in the Slider combo of the top bar to give the six zones REAPER functions.')
+    return
+  end
+  ImGui.TextDisabled(ctx, string.format('Mode "%s": %s  (no shift layer)', tostring(cur_xmode().name or view.xmode), xpath('normal', 'slider[' .. k .. ']')))
   edit_exquis_trigger('xsl_' .. k, function()
-    local t = exquis().slider
+    local t = cur_xmode().slider
     if type(t[k]) ~= 'table' then t[k] = { kind = 'none' } end
     return t[k]
   end, M.EXQUIS_SLIDER_KINDS)
@@ -2061,6 +2185,23 @@ end
 local function draw_exquis_inspector()
   local layer = view.xlayer
   draw_exquis_keyboard_box()
+  -- "Mode settings" (top bar toggle): name and colour of the mode being edited
+  if view.show_xmode then
+    local x, m = exquis(), cur_xmode()
+    push_id('xmodeset')
+    ImGui.SeparatorText(ctx, string.format('Exquis mode %d of %d', view.xmode, #x.modes))
+    ImGui.TextDisabled(ctx, 'model.exquis.modes[' .. view.xmode .. ']')
+    text_field('xmname', 'Name', m, 'name', -FLT_MIN)
+    local ch, v = exquis_colour_combo('Colour##xmcol', m.colour or 'white', -FLT_MIN)
+    if ch then push_undo(); m.colour = v; after_edit() end
+    ImGui.TextDisabled(ctx, 'Mode colour: LED of every button / push set to "Next / Previous Exquis mode" ((none) = white)')
+    ImGui.TextWrapped(ctx, 'Each mode is a full set of assignments (buttons, encoders, pushes, slider, shift layer). A button set to "Next Exquis mode" (Built-in) or an encoder push set to it steps through the modes on the device, wrapping around. "+" in the top bar adds a copy of this mode.')
+    begin_disabled(#x.modes <= 1)
+    if ImGui.Button(ctx, 'Remove this mode') then remove_xmode() end
+    end_disabled()
+    pop_id()
+    ImGui.Spacing(ctx)
+  end
   if sel.dev == 'exquis' and sel.kind == 'button' then inspect_exquis_button(sel.id, layer)
   elseif sel.dev == 'exquis' and sel.kind == 'encoder' then inspect_exquis_encoder(sel.id, layer)
   elseif sel.dev == 'exquis' and sel.kind == 'push' then inspect_exquis_push(sel.id)
@@ -2069,7 +2210,7 @@ local function draw_exquis_inspector()
     ImGui.SeparatorText(ctx, 'Exquis inspector')
     ImGui.TextWrapped(ctx, 'Click a control on the Exquis panel to edit it: the four encoders (ring = turn, centre or the "Push" line = push), the six slider zones, and the eight buttons. The pads stay native MPE and are not remapped.')
     ImGui.Spacing(ctx)
-    ImGui.TextWrapped(ctx, 'The Layer combo switches between the normal assignments and the shift layer (model.exquis.shift), active while the FCB1010 foot switch is held. Only buttons and encoder turns have a shift layer. Ctrl+Z / Ctrl+Y undo and redo.')
+    ImGui.TextWrapped(ctx, 'The Mode combo picks which Exquis mode (model.exquis.modes[N], a full set of assignments) is edited; a button or push set to "Next / Previous Exquis mode" steps through them on the device. The Layer combo switches between the normal assignments and the shift layer (modes[N].shift), active while the FCB1010 foot switch is held. Only buttons and encoder turns have a shift layer. Ctrl+Z / Ctrl+Y undo and redo.')
   end
 end
 
@@ -2103,10 +2244,14 @@ end
 -- ================================================================================================
 local function follow_live()
   local nmodes = #cur_modes()
-  live = state.read({ bank = #banks(), mode = 5, knob = 4, pad = math.max(1, nmodes), layout = #layouts(), modifiers = modifier_ids() })
+  local xm = model.exquis   -- Exquis mode count (only when the section exists; never created from here)
+  local nx = (type(xm) == 'table' and type(xm.modes) == 'table' and #xm.modes > 0) and #xm.modes or 1
+  live = state.read({ bank = #banks(), mode = 5, knob = 4, pad = math.max(1, nmodes), layout = #layouts(), modifiers = modifier_ids(), xmode = nx })
   if not live then return end
   -- the unit's state is tracked from the presses it echoes; until the first press it is unknown
   if not live.synced then return end
+  -- the Exquis echoes its mode presses (CC 90 / 91 on port 1); shown only while the Exquis view is active
+  if view.device == 'exquis' and type(live.xmode) == 'number' then view.xmode = math.max(1, math.min(nx, math.floor(live.xmode) + 1)) end
   if live.layout then view.layout = live.layout + 1 end
   if live.pad then view.mode = live.pad + 1 end
   if live.bank then view.bank = live.bank + 1 end
