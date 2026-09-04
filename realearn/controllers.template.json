@@ -1,0 +1,26 @@
+{
+  "controllers": [
+    {
+      "id": "oxygen-pro-61-live",
+      "name": "Oxygen Pro 61 Live mode (port 3)",
+      "enabled": true,
+      "connection": {
+        "kind": "Midi",
+        "input_port": 16,
+        "output_port": 16
+      },
+      "default_main_preset": "oxygen-pro-61/live"
+    },
+    {
+      "id": "oxygen-pro-61-pads",
+      "name": "Oxygen Pro 61 Preset-mode pads (port 1)",
+      "enabled": true,
+      "connection": {
+        "kind": "Midi",
+        "input_port": 14,
+        "output_port": 16
+      },
+      "default_main_preset": "oxygen-pro-61/pads"
+    }
+  ]
+}

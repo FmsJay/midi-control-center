@@ -1,0 +1,483 @@
+<meta charset="utf-8">
+<title>Oxygen Pro 61 Live Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f1f0ec; --panel:#ffffff; --ink:#1b1c20; --muted:#5f616a; --line:#cfcec7;
+  --accent:#d52a26; --accent2:#2f8cff; --chassis:#1b1c20; --chassis-ink:#ecebe6; --chassis-muted:#8f9098; --chassis-line:#33353d;
+  --led:#ff5a3c;
+  --c-green:#2fd24a; --c-azure:#3b8dff; --c-yellow:#ffd400; --c-violet:#8f55ff; --c-red:#ff3131; --c-chart:#b4ff3a;
+  --c-blue:#3346ff; --c-white:#f4f4f4; --c-off:#2a2b31; --c-orange:#ff8a1f; --c-magenta:#e040ff;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#101114; --panel:#1a1b20; --ink:#ecebe6; --muted:#9a9ba3; --line:#2e3037; }
+}
+:root[data-theme="dark"]{ --bg:#101114; --panel:#1a1b20; --ink:#ecebe6; --muted:#9a9ba3; --line:#2e3037; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+.wrap{max-width:1240px;margin:0 auto;padding:28px 20px 60px}
+h1,h2,h3,.lbl,.sel,.silk,.layer button{font-family:"Barlow Condensed","Arial Narrow",sans-serif}
+h1{font-size:40px;font-weight:700;letter-spacing:.01em;margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--muted);margin:0 0 18px;max-width:72ch}
+h2{font-size:24px;font-weight:600;margin:34px 0 10px;letter-spacing:.02em;text-transform:uppercase}
+h3{font-size:17px;font-weight:600;margin:0 0 6px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+code,.mono{font-family:"IBM Plex Mono",Consolas,monospace;font-size:.92em}
+/* layer switch */
+.layer{display:flex;gap:0;margin:0 0 14px;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:max-content}
+.layer button{appearance:none;border:0;background:var(--panel);color:var(--ink);padding:8px 16px;font-size:15px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.layer button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.layer button[data-layer="local"][aria-pressed="true"]{background:var(--accent2)}
+.layer button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* ---------- chassis ---------- */
+.chassis{background:var(--chassis);color:var(--chassis-ink);border-radius:16px;padding:16px 18px 18px;overflow-x:auto}
+.chassis.local .fn{color:#9fd3ff}
+.chassis.shift .fn{color:#ffd66b}
+.chassis.back .fn{color:#e6a6ff}
+.panel{display:grid;grid-template-columns:96px 372px 300px minmax(0,1fr);gap:16px;min-width:1160px;align-items:start}
+.lbl{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--chassis-muted)}
+.silk{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--chassis-muted);text-align:center;line-height:1.1}
+.fn{font-size:11px;line-height:1.2;color:var(--chassis-ink);text-align:center;min-height:2.4em;max-width:100%;overflow-wrap:break-word}
+.cc{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--chassis-muted);text-align:center;font-variant-numeric:tabular-nums}
+.ctl{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.left{display:flex;flex-direction:column;gap:14px;align-items:center;padding-top:6px;min-width:0}
+.left .fn{max-width:96px}
+.logo{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:16px;letter-spacing:.12em;color:var(--chassis-ink)}
+.small-btn{width:22px;height:14px;border-radius:3px;background:#2b2d35;border:1px solid #4d5059}
+.wheel{width:16px;height:64px;border-radius:8px;background:linear-gradient(#0c0d10,#3a3c44 50%,#0c0d10);border:1px solid var(--chassis-line)}
+.keys{width:60px;height:34px;border-radius:3px;background:repeating-linear-gradient(90deg,#f0f0f0 0 7px,#111 7px 8px);border:1px solid #444}
+.faders{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}
+.fader{width:14px;height:78px;border-radius:3px;background:#0c0d10;border:1px solid var(--chassis-line);position:relative}
+.fader::after{content:"";position:absolute;left:-6px;right:-6px;top:38%;height:9px;border-radius:2px;background:#d8d8d8;box-shadow:0 1px 0 #666}
+.fader.master::after{top:22%}
+.fbrow{display:grid;grid-template-columns:repeat(8,1fr) 44px;gap:4px;margin-top:8px;align-items:start}
+.fbtn{width:38px;height:24px;border-radius:4px;background:#2b2d35;border:1px solid #4d5059;display:flex;align-items:center;justify-content:center}
+.fbtn .dot{width:7px;height:7px;border-radius:50%;background:#3a3c44;box-shadow:inset 0 0 0 1px #55585f}
+.fbtn.lit .dot{background:var(--led);box-shadow:0 0 8px var(--led)}
+.modebox{display:flex;flex-direction:column;align-items:center;gap:3px}
+.leds{display:grid;gap:2px;font-size:8.5px;letter-spacing:.05em;color:var(--chassis-muted);font-family:"Barlow Condensed",sans-serif}
+.leds span::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#3a3c44;margin-right:4px;vertical-align:1px}
+.leds span.on::before{background:var(--led);box-shadow:0 0 6px var(--led)}
+.centre{display:grid;grid-template-rows:auto auto auto;gap:10px}
+.crow{display:grid;gap:6px;align-items:start}
+.crow.top{grid-template-columns:repeat(6,minmax(0,1fr))}
+.crow.mid,.crow.bot{grid-template-columns:52px 96px repeat(3,minmax(0,1fr))}
+.sel{appearance:none;border:1px solid #4d5059;background:#2b2d35;color:var(--chassis-ink);border-radius:4px;padding:5px 4px;font-size:11.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;cursor:pointer;width:100%;font-family:"Barlow Condensed",sans-serif;line-height:1.15}
+.sel[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.sel.static{cursor:default;opacity:.85}
+.sel:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.display{height:44px;border-radius:5px;background:#05070a;border:1px solid #3a3c44;color:#9fd3ff;font-family:"IBM Plex Mono",monospace;font-size:11px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.2;padding:2px}
+.encoder{width:36px;height:36px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#5a5c66,#24262e 70%);border:1px solid #4d5059;margin:0 auto}
+.right{display:grid;grid-template-columns:1fr 60px;gap:10px}
+.knobs{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-bottom:8px}
+.knob{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#4a4c55,#20222a 70%);border:1px solid #4d5059;position:relative}
+.knob::after{content:"";position:absolute;left:50%;top:3px;width:2px;height:10px;background:var(--chassis-ink);transform:translateX(-50%)}
+.pads{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(2,1fr);gap:5px}
+.pad{width:100%;aspect-ratio:1/1;border-radius:6px;border:1px solid #000;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:4px 3px;font-family:"Barlow Condensed",sans-serif;font-size:11px;font-weight:600;line-height:1.1;text-align:center;color:#111;cursor:pointer}
+.pad.dark{color:#ecebe6}
+.pad .no{align-self:flex-start;font-size:10px;opacity:.7}
+.pad .silk{color:inherit;opacity:.75;font-size:8.5px}
+.pad:focus-visible{outline:2px solid #fff}
+.sidebtns{display:flex;flex-direction:column;justify-content:center;gap:8px;padding-top:44px}
+.hint{font-size:11.5px;color:var(--chassis-muted)}
+/* keybed */
+.keybed{position:relative;height:112px;min-width:1160px;margin-top:4px}
+.key{position:absolute;bottom:0;border:1px solid #111;border-radius:0 0 3px 3px;box-sizing:border-box}
+.key.w{background:#ececec;height:64px;width:calc(100%/36);z-index:1}
+.key.b{background:#161718;height:40px;width:calc(100%/36*.6);z-index:2;transform:translateX(-50%)}
+.key.tag.w{background:#ffd66b}.key.tag.b{background:#8a6a1a}
+.key .kl{position:absolute;bottom:2px;left:0;right:0;text-align:center;font-family:"IBM Plex Mono",monospace;font-size:8px;color:#333}
+.key.b .kl{color:#ddd}
+.ktag{position:absolute;top:0;transform:translateX(-50%);font-family:"Barlow Condensed",sans-serif;font-size:9px;font-weight:600;letter-spacing:.03em;color:#ffd66b;white-space:nowrap}
+.kgroup{position:absolute;top:30px;height:12px;border-top:1px solid #ffd66b;border-left:1px solid #ffd66b;border-right:1px solid #ffd66b;font-family:"Barlow Condensed",sans-serif;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#ffd66b;text-align:center;line-height:1}
+/* ---------- tables ---------- */
+.tables{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:6px;border:1px solid rgba(0,0,0,.35)}
+.notes{max-width:68ch}
+.notes li{margin:4px 0}
+.foot{color:var(--muted);font-size:12.5px;margin-top:28px}
+@media (prefers-reduced-motion:no-preference){.pad,.fbtn .dot,.sel{transition:background .15s,box-shadow .15s}}
+</style>
+
+<div class="wrap">
+  <h1>Oxygen Pro 61 Live Map</h1>
+  <p class="sub">The keyboard's top panel as it sits in front of you. Switch between what each control does in <b>REAPER</b> under the Live-mode ReaLearn preset and what the <b>keyboard</b> does on its own. Click <b>Shift</b> on the panel to see every Shift combination, <b>Back</b> to see the one-shot Back layer. Mode, Bank, DAW and the pad side buttons behave like the hardware.</p>
+
+  <div class="layer" role="group" aria-label="Label layer">
+    <button data-layer="reaper" aria-pressed="true">REAPER functions</button>
+    <button data-layer="local" aria-pressed="false">Keyboard functions</button>
+  </div>
+
+  <div class="chassis" id="chassis">
+    <div class="panel">
+      <div class="left">
+        <div class="logo">M-AUDIO</div>
+        <div class="ctl"><div style="display:flex;gap:6px"><span class="small-btn"></span><span class="small-btn"></span></div><div class="silk">octave − / +</div><div class="fn" id="octFn"></div></div>
+        <div class="ctl"><div style="display:flex;gap:10px"><span class="wheel"></span><span class="wheel"></span></div><div class="silk">pitch · mod</div><div class="fn" id="wheelFn"></div></div>
+        <div class="ctl"><div class="keys"></div><div class="silk">61 keys</div><div class="fn" id="keysFn"></div></div>
+      </div>
+
+      <div>
+        <div class="lbl">Faders 1-9 · <span id="faderTitle"></span></div>
+        <div class="faders" id="faders"></div>
+        <div class="lbl" style="margin-top:8px">Function buttons · <span id="btnTitle"></span></div>
+        <div class="fbrow">
+          <div id="fbtns" style="display:contents"></div>
+          <div class="modebox">
+            <button class="sel" id="modeBtn" title="Mode button">Mode</button>
+            <div class="leds" id="modeLeds"></div>
+            <div class="fn" id="modeFn" style="min-height:0"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="centre">
+        <div class="crow top">
+          <div class="ctl"><button class="sel" id="dawBtn">DAW</button><div class="fn" id="dawFn"></div><div class="cc">CC 113</div></div>
+          <div class="ctl"><button class="sel static">Preset</button><div class="fn" id="presetFn"></div><div class="cc">CC 112</div></div>
+          <div class="ctl"><button class="sel static">Tempo</button><div class="fn" id="tempoFn"></div><div class="cc">—</div></div>
+          <div class="ctl"><button class="sel" data-bankstep="-1">&lt; Bank</button><div class="fn" id="bankLFn"></div><div class="cc">CC 110</div></div>
+          <div class="ctl"><button class="sel" data-bankstep="1">Bank &gt;</button><div class="fn" id="bankRFn"></div><div class="cc">CC 111</div></div>
+          <div class="ctl"><button class="sel static">Note repeat<br>latch</button><div class="fn" id="nrFn"></div><div class="cc">—</div></div>
+        </div>
+        <div class="crow mid">
+          <div class="ctl"><button class="sel" id="shiftBtn" title="Shift (hold)">Shift</button><div class="cc">CC 105 ch13</div></div>
+          <div class="ctl"><div class="display" id="display"></div><div class="fn" id="dispFn"></div></div>
+          <div class="ctl"><button class="sel static">&lt;&lt;</button><div class="fn" id="rewFn"></div><div class="cc">CC 115</div></div>
+          <div class="ctl"><button class="sel static">&gt;&gt;</button><div class="fn" id="ffFn"></div><div class="cc">CC 116</div></div>
+          <div class="ctl"><button class="sel static">Loop</button><div class="fn" id="loopFn"></div><div class="cc">CC 114</div></div>
+        </div>
+        <div class="crow bot">
+          <div class="ctl"><button class="sel" id="backBtn" title="Back = one-shot layer: press Back, then the button">Back</button><div class="fn" id="backFn"></div><div class="cc">CC 104</div></div>
+          <div class="ctl"><div class="encoder"></div><div class="fn" id="encFn"></div><div class="cc">CC 103 / 102</div></div>
+          <div class="ctl"><button class="sel static">&#9632;</button><div class="fn" id="stopFn"></div><div class="cc">CC 117</div></div>
+          <div class="ctl"><button class="sel static">&#9654;</button><div class="fn" id="playFn"></div><div class="cc">CC 118</div></div>
+          <div class="ctl"><button class="sel static">&#9679;</button><div class="fn" id="recFn"></div><div class="cc">CC 119</div></div>
+        </div>
+        <div class="hint" id="status"></div>
+      </div>
+
+      <div>
+        <div class="lbl">Knobs 1-8 · <span id="knobTitle"></span></div>
+        <div class="knobs" id="knobs"></div>
+        <div class="lbl">Pads · <span id="padTitle"></span></div>
+        <div class="right">
+          <div class="pads" id="pads"></div>
+          <div class="sidebtns">
+            <button class="sel" data-padstep="-1" title="top side button">&#9650;</button>
+            <button class="sel" data-padstep="1" title="bottom side button">&#9660;</button>
+            <div class="cc" id="sideCc">CC 107<br>CC 108</div>
+          </div>
+        </div>
+        <div class="hint" id="padNote" style="margin-top:6px"></div>
+      </div>
+    </div>
+    <!-- keybed with the Shift functions silkscreened above the keys -->
+    <div class="lbl" style="margin-top:14px">Keys C2-C7 · <span id="keysTitle"></span></div>
+    <div class="keybed" id="keybed"></div>
+    <div class="hint" id="keysNote"></div>
+  </div>
+
+  <h2>REAPER side</h2>
+  <div class="tables">
+    <div class="card">
+      <h3>Fader banks (Bank &lt; / &gt;)</h3>
+      <table>
+        <thead><tr><th>Bank</th><th>Faders 1-8</th><th>Knobs 1-8</th><th>Function buttons (by Mode)</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>tracks 1-8 volume</td><td>tracks 1-8 by knob function</td><td>tracks 1-8: arm / select / mute / solo</td></tr>
+          <tr><td>2</td><td>focused FX parameters 1-8</td><td>focused FX parameters 9-16</td><td>Select: FX slots 1-8 on/off on the selected track · Mute: 1 mute, 2 solo, 3 arm, 4 all-FX bypass (selected track)</td></tr>
+          <tr><td>3</td><td>tracks 9-16 volume</td><td>tracks 9-16 by knob function</td><td>tracks 9-16: arm / select / mute / solo</td></tr>
+          <tr><td>4</td><td>free</td><td>free</td><td>dark</td></tr>
+        </tbody>
+      </table>
+      <p class="hint" style="color:var(--muted);margin:10px 0 0">Knob functions (Shift + pad 9 / 10 / 11): Pan · Device = focused FX parameters 1-8 · Send 1 of each track; a fourth, sends 1-8 of the selected track, answers CC 83 if any button sends it. Fader 9 is always master volume. Faders and knobs pick up, so a control does nothing until it passes the current value. Function buttons are latching; one press toggles. Select buttons add and remove tracks from the selection.</p>
+    </div>
+    <div class="card">
+      <h3>Pad modes, by layout (DAW button toggles the layout)</h3>
+      <table>
+        <thead><tr><th>#</th><th>General DAW</th><th>LoopCanvas</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td colspan="2"><b>Drums</b>: hits are re-emitted into the <span class="mono">Oxygen Pro 61</span> port-1 input as channel-10 notes 36-51, so drum tracks keep their usual input; <span class="sw" style="background:var(--c-blue)"></span>blue at rest, <span class="sw" style="background:var(--c-green)"></span>soft <span class="sw" style="background:var(--c-yellow)"></span>medium <span class="sw" style="background:var(--c-red)"></span>hard</td></tr>
+          <tr><td>2</td><td>Mixer tracks 1-8: pads 1-8 mute <span class="sw" style="background:var(--c-red)"></span>muted / <span class="sw" style="background:var(--c-chart)"></span>open; pads 9-16 solo <span class="sw" style="background:var(--c-yellow)"></span>on / <span class="sw" style="background:var(--c-azure)"></span>off</td><td><span class="sw" style="background:var(--c-green)"></span>LoopCanvas press slot 1-8 · <span class="sw" style="background:var(--c-azure)"></span>drop slot 1-8</td></tr>
+          <tr><td>3</td><td>Mixer tracks 9-16, same colours</td><td><span class="sw" style="background:var(--c-yellow)"></span>LoopCanvas return section 1-8 · <span class="sw" style="background:var(--c-violet)"></span>align slot 1-8</td></tr>
+          <tr><td>4</td><td><span class="sw" style="background:var(--c-orange)"></span>go to marker 1-8 · <span class="sw" style="background:var(--c-white)"></span>insert marker · <span class="sw" style="background:var(--c-azure)"></span>prev / next marker · <span class="sw" style="background:var(--c-yellow)"></span>repeat · <span class="sw" style="background:var(--c-violet)"></span>undo / redo · <span class="sw" style="background:var(--c-green)"></span>save · <span class="sw" style="background:var(--c-magenta)"></span>metronome</td><td>Mixer tracks 1-8</td></tr>
+          <tr><td>5</td><td colspan="2"><span class="sw" style="background:var(--c-white)"></span>Free: white, nothing mapped</td></tr>
+        </tbody>
+      </table>
+      <p class="hint" style="color:var(--muted);margin:10px 0 0">On each DAW press the pads sweep green (General) or azure (LoopCanvas) for a second, then return to their real colours. The marker and utility action IDs are REAPER defaults; confirm them once in the Actions window.</p>
+    </div>
+  </div>
+
+  <h2>Keyboard side</h2>
+  <div class="tables">
+    <div class="card">
+      <h3>Back layer (press Back, then the button · REAPER only)</h3>
+        <p class="hint" style="color:var(--muted);margin:0 0 8px">The keyboard reports nothing for a second button while any button is held (measured 2026-09-03), so no button can be a hold-modifier. Instead Back (CC 104) arms a one-shot layer: press Back, the pads switch to a violet/rose checkerboard, then press the control. That press fires the function and drops the layer (pads repaint). Press Back again to cancel. Turning the encoder keeps the layer armed until the next press.</p>
+        <table>
+          <tr><td>Back, then &lt;&lt; / &gt;&gt;</td><td>undo / redo (40029 / 40030)</td></tr>
+          <tr><td>Back, then Bank &lt; / Bank &gt;</td><td>previous / next marker (40172 / 40173)</td></tr>
+          <tr><td>Back, then Play</td><td>insert marker at the play position (40157)</td></tr>
+          <tr><td>Back, then Record</td><td>metronome on / off (40364)</td></tr>
+          <tr><td>Back, then Loop</td><td>show / hide the mixer (40078)</td></tr>
+          <tr><td>Back, then Stop</td><td>General DAW: save project (40026) · LoopCanvas: cancel a pending section change</td></tr>
+          <tr><td>Back, then encoder turn</td><td>zoom the arrange view out / in (1011 / 1012)</td></tr>
+          <tr><td>Back, then encoder press</td><td>insert new track (40001)</td></tr>
+          <tr><td>Back, then faders / knobs / fader buttons / pads</td><td>unchanged; the layer stays armed</td></tr>
+        </table>
+        <h3>Shift combinations</h3>
+      <table>
+        <tbody>
+          <tr><td>Shift + Bank &lt;</td><td>lock knobs 1-4 to the arpeggiator (Type, Octave, Gate, Swing) until pressed again</td></tr>
+          <tr><td>Shift + Bank &gt;</td><td>lock pads 13-16 to the DAW shortcut keys until pressed again</td></tr>
+          <tr><td>Shift + knobs 1-4</td><td>arpeggiator Type / Octave / Gate / Swing</td></tr>
+          <tr><td>Shift + pads 9 / 10 / 11</td><td>knob function Pan / Device / Sends (in REAPER: pan, focused FX, send 1)</td></tr>
+          <tr><td>Shift + pads 13-16</td><td>Save / Quantize / View / Undo as computer keystrokes (Ctrl+S etc.); no MIDI is sent, so REAPER's own shortcuts apply</td></tr>
+          <tr><td>Shift + Tempo</td><td>nothing: in Live mode it sends no MIDI and types no keystroke (measured with a system-wide key probe, 2026-09-03). Metronome on/off is Back + Record, or the metronome pad in the Markers pad mode</td></tr>
+          <tr><td>Shift + Note Repeat</td><td>latch note repeat; the pads keep rolling until Note Repeat is pressed again</td></tr>
+          <tr><td>Shift + Stop</td><td>MIDI panic: Reset All Controllers (CC 121) and All Notes Off (CC 123) on all 16 channels of port 1 (measured)</td></tr>
+          <tr><td>Shift + &lt;&lt; / Shift + &gt;&gt;</td><td>firmware: types zoom keystrokes (REAPER zooms in/out); no MIDI reaches ReaLearn</td></tr>
+          <tr><td>Shift + Play / Record / Loop / pad / fader button</td><td>nothing reaches REAPER (measured 2026-09-03): the firmware swallows the combination. Shift + fader button opens the keyboard's own edit menu, and the Shift release itself is not sent. Shift is therefore never used as a REAPER modifier; Back is</td></tr>
+          <tr><td>Shift + Mode</td><td>Global Settings menu</td></tr>
+          <tr><td>Shift + ARP / Chord / Scale button</td><td>edit that function's settings on the display</td></tr>
+          <tr><td>Shift + Octave − / +</td><td>transpose in semitones; Octave − and + together reset</td></tr>
+          <tr><td>Shift + keys C2-B2</td><td>Chord mode key: C, Db, D, Eb, E, F, Gb, G, Ab, A, Bb, B (one key per semitone)</td></tr>
+          <tr><td>Shift + keys C3-F#3</td><td>Chord voicing: 1,3,5 · 1,3,7 · 1,3,5,7 · 1,5,9 · 1,5,12 · 3,5,1 · 5,1,3</td></tr>
+          <tr><td>Shift + keys G3-Bb3</td><td>Chord type: Random · Major · Minor · Custom</td></tr>
+          <tr><td>Shift + keys A5-C7</td><td>global MIDI channel 1-16 (A5 = 1 … C7 = 16, one per semitone)</td></tr>
+          <tr><td>Keys in an edit menu</td><td>while First/Last is selected in ARP, Chord or Scale edit, pressing a key enters that note as the split boundary</td></tr>
+          <tr><td>Shift + Preset / Shift + DAW</td><td>edit the current Preset / User DAW preset (not used in Live mode)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Local functions (work in every mode)</h3>
+      <table>
+        <tbody>
+          <tr><td>Function buttons with Mode LEDs off</td><td>ARP on/off · ARP latch · Chord mode on/off · Smart Scale on/off · 1/4 · 1/8 · 1/16 · 1/32 note timing for ARP and Note Repeat (Shift-labelled triplets: 1/4T, 1/8T, 1/16T, 1/32T)</td></tr>
+          <tr><td>Encoder press (REAPER)</td><td><b>Tap tempo</b>: two or more presses within two seconds set REAPER's project tempo to the tapped rate, whole BPM, 30-300 (ReaLearn plus the Live watcher, since the keyboard's own Tempo button is silent)</td></tr>
+          <tr><td><b>Back</b> (one-shot layer)</td><td>arms the violet Back layer, see its table. A second Back press cancels</td></tr>
+          <tr><td>Aftertouch</td><td>press a held key harder: channel aftertouch on port 1 (0-127, shown on the display), on the same channel as the notes, so any instrument that reads channel pressure responds; nothing to configure in REAPER</td></tr>
+          <tr><td>Tempo</td><td>tap sets the <em>keyboard's</em> tempo only; the button sends nothing to the computer and the keyboard emits no MIDI clock in Internal mode (measured). Keep <b>Clock = External</b> so the arpeggiator and Note Repeat follow REAPER's tempo while REAPER plays; they pause while REAPER is stopped because REAPER only sends clock during playback. To set REAPER's BPM from the keyboard, tap the <b>encoder</b> (see above)</td></tr>
+          <tr><td>Note Repeat</td><td>while held (or latched with Shift), the pads roll at the chosen division and their notes go out on <b>port 1, channel 1</b> instead of port 3, so the ReaLearn pad modes are bypassed and any track listening to port 1 hears the roll; the pads show the firmware's own colours meanwhile; the encoder changes the division; release restores the pad mode</td></tr>
+          <tr><td>Chord mode</td><td>one key plays a chord; key / voicing / type settable; applies to keys, pads or both (Global Settings)</td></tr>
+          <tr><td>Smart Scale</td><td>keys constrained to a scale; edit with Shift + Scale</td></tr>
+          <tr><td>Display and encoder</td><td>show the last control moved; scroll and press to navigate the edit menus; Back leaves a menu</td></tr>
+          <tr><td>Preset button</td><td>Preset mode: 16 instrument presets, keys and pads on port 1 (pads channel 10); DAW returns to Live mode</td></tr>
+          <tr><td>Octave − / +</td><td>up to +4 / −3 octaves; both together reset</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Global Settings (Shift + Mode)</h3>
+      <table>
+        <tbody>
+          <tr><td>G.CHAN</td><td>global MIDI channel for everything set to "Global"</td></tr>
+          <tr><td>PROG / MSB / B.LSB</td><td>program change and bank bytes sent on demand</td></tr>
+          <tr><td>KEY OCT / KEY TRAN</td><td>keybed octave and transpose</td></tr>
+          <tr><td>K. SENS / PD SENS.</td><td>keyboard and pad velocity curves</td></tr>
+          <tr><td>MIDI OUT</td><td>what the 5-pin DIN jack carries: Keys, USB (what the computer sends to port 2), Keys/USB, or Off</td></tr>
+          <tr><td>Operating System</td><td>PC / macOS, for the DAW shortcut keystrokes</td></tr>
+          <tr><td>Chord Mode</td><td>Chord mode applies to Keys, Pads, or Pads and Keys</td></tr>
+        </tbody>
+      </table>
+      <h3 style="margin-top:14px">Rear panel</h3>
+      <table><tbody>
+        <tr><td>Power switch</td><td>USB-powered</td></tr>
+        <tr><td>Sustain pedal</td><td>momentary footswitch input; latch option in the Preset Editor</td></tr>
+        <tr><td>USB</td><td>four MIDI ports: 1 keys and Preset-mode controls · 2 DIN passthrough · 3 everything in Live mode, LEDs in · 4 Preset Editor</td></tr>
+        <tr><td>MIDI Out (5-pin)</td><td>see MIDI OUT setting</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <h2>Behind the panel</h2>
+  <div class="tables">
+    <div class="card notes">
+      <h3>How it stays alive</h3>
+      <ul>
+        <li>The keyboard runs in its Ableton "Live" firmware mode. Nothing is stored on the keyboard; the ReaScript <code>Oxygen Pro - Live watcher.lua</code>, started by <code>__startup.lua</code>, switches it into Live mode and unlocks the LEDs when REAPER starts and after every keyboard power-on, then asks ReaLearn to repaint. No Python required.</li>
+        <li>One ReaLearn unit does everything: <code>presets/main/oxygen-pro-61/live.preset.luau</code> on <code>MIDIIN3</code> (control-only) / <code>MIDIOUT3</code>, created automatically from <code>Helgoboss/ReaLearn/controllers.json</code>.</li>
+        <li>The screen keeps saying Ableton: nothing arriving from the host redraws it in this mode. The pad sweep is the layout indicator.</li>
+        <li>New machine: run <code>Scripts/Oxygen Pro/Oxygen Pro - First time setup.lua</code>. <code>oxygen_led_unlock.py --restore</code> returns the keyboard to its normal presets.</li>
+      </ul>
+    </div>
+    <div class="card notes">
+      <h3>Where the pieces live</h3>
+      <ul>
+        <li><code>DAW/Utility/oxygen-pro-tools/</code>: <code>LIVE_MODE_MAP.md</code>, <code>SETUP_STEPS.md</code>, scripts, and dated backups of both the Live-mode and the earlier DAW-mode setups.</li>
+        <li><code>REAPER/Scripts/Oxygen Pro/</code>: the watcher, the first-time setup, the manual unlock and a one-shot flash test.</li>
+        <li>Every measurement behind these choices is in the <code>reaper</code> skill's FINDINGS, F-0011 through F-0023. Keyboard-side facts come from the Oxygen Pro Series User Guide v1.1.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="foot">Pad colours are the keyboard's fixed palette. A lit button on this diagram means REAPER says that state is on. Blue labels are the keyboard's own functions; amber labels are Shift combinations; violet labels are Back-layer functions (press Back on the keyboard, or click it here).</p>
+</div>
+
+<script>
+(function(){
+  const PAD_NOTE=[40,41,42,43,48,49,50,51,36,37,38,39,44,45,46,47];
+  const PAD_SILK=['','','','','','','','','pan','device','sends','','save','quantize','view','undo'];
+  const C={green:'var(--c-green)',azure:'var(--c-azure)',yellow:'var(--c-yellow)',violet:'var(--c-violet)',red:'var(--c-red)',chart:'var(--c-chart)',blue:'var(--c-blue)',white:'var(--c-white)',orange:'var(--c-orange)',magenta:'var(--c-magenta)',grey:'#3a3c44'};
+  const state={bank:0,mode:2,knob:0,pad:0,layout:0,shift:false,back:false,layer:'reaper'};
+  const MODE_NAMES=['Off','Record','Select','Mute','Solo'];
+  const KNOB_NAMES=['Pan','Device','Send 1','Sel. sends'];
+  const LAYOUT_NAMES=['General DAW','LoopCanvas'];
+  const PAD_NAMES=[['Drums','Mixer 1-8','Mixer 9-16','Markers','Free'],['Drums','Loop 1','Loop 2','Mixer 1-8','Free']];
+  const MARKER_PADS=[...Array.from({length:8},(_,i)=>({c:C.orange,fn:'marker '+(i+1)})),
+    {c:C.white,fn:'insert marker'},{c:C.azure,fn:'prev marker'},{c:C.azure,fn:'next marker'},{c:C.yellow,fn:'repeat'},
+    {c:C.violet,dark:true,fn:'undo'},{c:C.violet,dark:true,fn:'redo'},{c:C.green,fn:'save'},{c:C.magenta,dark:true,fn:'metronome'}];
+  const SILK=['ARP','LATCH','CHORD','SCALE','1/4','1/8','1/16','1/32'];
+  const LOCAL_FB=['ARP on/off','ARP latch','Chord on/off','Scale on/off','1/4 timing','1/8 timing','1/16 timing','1/32 timing'];
+  const SHIFT_FB=['edit ARP','—','edit Chord','edit Scale','1/4T','1/8T','1/16T','1/32T'];
+  const ARP_KNOBS=['ARP type','ARP octave','ARP gate','ARP swing'];
+  const $=id=>document.getElementById(id);
+  const L=()=>state.layer==='local', S=()=>state.shift&&!state.back, B=()=>state.back;
+
+  function knobFn(i){
+    if(S()) return i<4?ARP_KNOBS[i]:'—';
+    if(L()) return 'plugin / DAW knob';
+    if(state.bank===1) return 'FX param '+(i+9);
+    if(state.bank===3) return 'free';
+    const t=(state.bank===0?1:9)+i;
+    return [`Tr ${t} pan`,`FX param ${i+1}`,`Tr ${t} send 1`,`Sel. send ${i+1}`][state.knob];
+  }
+  function faderFn(i){
+    if(L()||S()) return i===8?'master':'DAW fader';
+    if(i===8) return 'Master vol';
+    if(state.bank===1) return 'FX param '+(i+1);
+    if(state.bank===3) return 'free';
+    return 'Tr '+((state.bank===0?1:9)+i)+' vol';
+  }
+  function btnFn(i){
+    if(S()) return SHIFT_FB[i];
+    if(L()||state.mode===0) return LOCAL_FB[i];
+    const m=state.mode;
+    if(state.bank===3) return null;
+    if(state.bank===1){
+      if(m===2) return 'FX slot '+(i+1);
+      if(m===3) return ['Mute sel','Solo sel','Arm sel','FX bypass sel'][i]||null;
+      return null;
+    }
+    const t=(state.bank===0?1:9)+i;
+    return ['',`Arm ${t}`,`Sel ${t}`,`Mute ${t}`,`Solo ${t}`][m];
+  }
+  function mixerPad(k,first){ const top=k<=8; return top?{c:C.chart,fn:'mute '+(first+k)}:{c:C.azure,fn:'solo '+(first+k-8)}; }
+  function padInfo(k){
+    const p=state.pad, top=k<=8, n=PAD_NOTE[k-1];
+    if(S()){
+      if(k>=9&&k<=11) return {c:C.grey,dark:true,fn:['Pan','Device','Sends'][k-9]+' knobs'};
+      if(k>=13) return {c:C.grey,dark:true,fn:['Save','Quantize','View','Undo'][k-13]+' key'};
+      return {c:C.grey,dark:true,fn:'—'};
+    }
+    if(L()) return {c:C.grey,dark:true,fn:'pad note '+n};
+    if(p===0) return {c:C.blue,dark:true,fn:'drum '+n};
+    if(p===4) return {c:C.white,fn:'free'};
+    if(state.layout===0){ if(p===1) return mixerPad(k,0); if(p===2) return mixerPad(k,8); return MARKER_PADS[k-1]; }
+    if(p===1) return top?{c:C.green,fn:'press '+k}:{c:C.azure,fn:'drop '+(k-8)};
+    if(p===2) return top?{c:C.yellow,fn:'return '+k}:{c:C.violet,dark:true,fn:'align '+(k-8)};
+    return mixerPad(k,0);
+  }
+  // fixed labels per layer: [reaper, local, shift, back held]
+  const FIXED={
+    octFn:['keys, local','octave ±  (+4 / −3)','transpose ±12 semitones','—'],
+    wheelFn:['keys, port 1','pitch bend · mod CC 1','—','—'],
+    keysFn:['notes + aftertouch (port 1)','notes, aftertouch, chord & scale modes','chord keys C2-Bb3 · channel A5-C7','notes as usual'],
+    modeFn:['cycles button modes','Off / Rec / Select / Mute / Solo','Global Settings menu','—'],
+    dawFn:['layout toggle','hold: DAW select menu','edit User DAW (n/a)','—'],
+    presetFn:['Preset mode (port 1)','hold: preset select menu','edit current preset','—'],
+    tempoFn:['keyboard tempo · Clock = External','tap tempo · hold: tempo menu','no keystroke (measured)','—'],
+    bankLFn:['fader bank − (pad 1-4 flashes)','bank −','lock ARP knobs','PREV MARKER'],
+    bankRFn:['fader bank + (pad 1-4 flashes)','bank +','lock shortcut pads','NEXT MARKER'],
+    nrFn:['pads roll to port 1 ch 1 while held','note repeat · encoder = division','latch','—'],
+    dispFn:['screen: firmware only','last control / edit menus','—','—'],
+    rewFn:['go to start','rewind','zoom (keystroke)','UNDO'],
+    ffFn:['go to end','fast forward','zoom (keystroke)','REDO'],
+    loopFn:['repeat','loop on/off','—','MIXER'],
+    backFn:['press: arm Back layer','back / exit menu','delete letter (naming)','ARMED · press again = cancel'],
+    encFn:['browse tracks · press: TAP TEMPO','scroll menus · press: enter','—','ZOOM · press: NEW TRACK'],
+    stopFn:['stop','stop · double: to start','MIDI PANIC (port 1)','SAVE · Loop: CANCEL'],
+    playFn:['play / stop','play','—','MARKER +'],
+    recFn:['record','record','—','METRO­NOME'],
+  };
+  // ---- keybed: 61 keys, MIDI 36 (C2) .. 96 (C7) at default octave ----
+  const NOTE_NAMES=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+  const CHORD_KEY=NOTE_NAMES, VOICING=['1,3,5','1,3,7','1,3,5,7','1,5,9','1,5,12','3,5,1','5,1,3'], CTYPE=['Random','Major','Minor','Custom'];
+  function shiftKeyTag(n){                       // n = MIDI note
+    if(n>=36&&n<=47) return CHORD_KEY[n-36];
+    if(n>=48&&n<=54) return VOICING[n-48];
+    if(n>=55&&n<=58) return CTYPE[n-55];
+    if(n>=81&&n<=96) return String(n-80);
+    return null;
+  }
+  function renderKeys(){
+    const isBlack=n=>[1,3,6,8,10].includes(n%12);
+    let whites=0; const total=36; const html=[];
+    const wx=[];                                    // x centre (in %) of each note
+    for(let n=36;n<=96;n++){
+      if(!isBlack(n)){ wx[n]=(whites+0.5)*100/total; whites++; }
+      else wx[n]=(whites)*100/total;                 // between previous and next white
+    }
+    let ti=0;
+    for(let n=36;n<=96;n++){
+      const b=isBlack(n), tag=S()?shiftKeyTag(n):null;
+      const left=b?wx[n]:wx[n]-50/total;
+      const lbl=(!b&&n%12===0)?'C'+(n/12-1):'';
+      html.push(`<div class="key ${b?'b':'w'}${tag?' tag':''}" style="left:${left}%"${tag?` title="Shift + ${NOTE_NAMES[n%12]}${Math.floor(n/12)-1}: ${tag}"`:''}><span class="kl">${lbl}</span></div>`);
+      if(tag){ html.push(`<div class="ktag" style="left:${wx[n]}%;top:${(ti%2)*12}px">${tag}</div>`); ti++; }
+    }
+    if(S()){
+      const grp=(a,b,text)=>{const l=wx[a]-50/total, r=wx[b]+50/total; html.push(`<div class="kgroup" style="left:${l}%;width:${r-l}%">${text}</div>`);};
+      grp(36,47,'chord key'); grp(48,54,'chord voicing'); grp(55,58,'chord type'); grp(81,96,'global channel');
+    }
+    $('keybed').innerHTML=html.join('');
+    $('keysTitle').textContent=S()?'Shift held: chord mode and global channel live on these keys':(L()?'notes with velocity and aftertouch; chord and scale modes apply here':'notes on port 1 to your instrument tracks');
+    $('keysNote').textContent=S()?'C2-B2 chord key · C3-F#3 chord voicing · G3-Bb3 chord type · A5-C7 global MIDI channel 1-16. Hover a highlighted key for its exact assignment.':'Hold Shift (on this page or on the keyboard) to see the functions silkscreened above the keys. Octave buttons shift the whole range up to +4 or down to −3 octaves.';
+  }
+  function render(){
+    const layerIdx=B()?3:S()?2:(L()?1:0);
+    renderKeys();
+    const ch=$('chassis'); ch.classList.toggle('local',L()&&!S()&&!B()); ch.classList.toggle('shift',S()); ch.classList.toggle('back',B());
+    for(const id in FIXED){ const el=$(id); if(el) el.textContent=FIXED[id][layerIdx]; }
+    $('faderTitle').textContent=L()?'keyboard view':'bank '+(state.bank+1);
+    $('btnTitle').textContent=S()?'Shift held':(L()?'keyboard functions':MODE_NAMES[state.mode]+' mode · bank '+(state.bank+1));
+    $('knobTitle').textContent=S()?'Shift: arpeggiator':(L()?'keyboard view':KNOB_NAMES[state.knob]+' · bank '+(state.bank+1));
+    $('padTitle').textContent=S()?'Shift held':(L()?'keyboard view':LAYOUT_NAMES[state.layout]+' · '+PAD_NAMES[state.layout][state.pad]);
+    $('status').textContent=B()?'Back layer armed (the pads show a violet/rose checkerboard on the keyboard): the next press of a violet-labelled control fires that function and drops the layer. Faders, knobs and fader buttons are unchanged.':L()?'Keyboard functions layer: what the firmware does regardless of REAPER. Amber = Shift combination.':'REAPER layer: bank '+(state.bank+1)+' of 4 · layout '+LAYOUT_NAMES[state.layout]+' · pad mode '+PAD_NAMES[state.layout][state.pad];
+    $('display').textContent=L()?'last control · menus':'Ableton';
+    $('faders').innerHTML=Array.from({length:9},(_,i)=>`<div class="ctl"><div class="silk">${i+1}</div><div class="fader${i===8?' master':''}"></div><div class="fn">${faderFn(i)}</div><div class="cc">CC ${i===8?41:12+i}</div></div>`).join('');
+    $('fbtns').innerHTML=Array.from({length:8},(_,i)=>{const f=btnFn(i);const lit=!L()&&!S()&&state.mode!==0&&!!f;return `<div class="ctl"><div class="silk">${SILK[i]}</div><div class="fbtn${lit?' lit':''}"><span class="dot"></span></div><div class="fn">${f||'dark'}</div><div class="cc">CC ${32+i}</div></div>`}).join('');
+    $('modeLeds').innerHTML=['REC','SELECT','MUTE','SOLO'].map((n,i)=>`<span class="${(!L()&&state.mode===i+1)?'on':''}">${n}</span>`).join('');
+    $('knobs').innerHTML=Array.from({length:8},(_,i)=>`<div class="ctl"><div class="knob"></div><div class="fn">${knobFn(i)}</div><div class="cc">CC ${22+i}</div></div>`).join('');
+    $('pads').innerHTML=Array.from({length:16},(_,i)=>{const k=i+1,p=padInfo(k);return `<button class="pad${p.dark?' dark':''}" data-padk="${k}" style="background:${p.c}"><span class="no">${k}</span><span>${p.fn}</span><span class="silk">${PAD_SILK[i]||''}</span></button>`}).join('');
+    const name=PAD_NAMES[state.layout][state.pad];
+    $('padNote').textContent = B() ? 'Back layer armed: the pads show a violet/rose checkerboard until the layer drops; only transport, Bank and encoder change meaning.' : S() ? 'Shift held: pads 9-11 choose the knob function; pads 13-16 send the DAW shortcut keystrokes Save / Quantize / View / Undo.'
+      : L() ? 'Keyboard view: pads send notes 36-51 with velocity; Note Repeat repeats them at the chosen timing; Chord mode can apply to them (Global Settings).'
+      : state.pad===0 ? 'Drum mode: each hit is re-emitted as a channel-10 note on the Oxygen Pro 61 port-1 input. Colour follows hit strength.'
+      : name.startsWith('Mixer') ? 'Mixer mode: pad colour is live state. Red = muted, chartreuse = open; yellow = soloed, azure = off.'
+      : name==='Markers' ? 'Markers & utilities: go to marker 1-8, insert marker, previous/next marker, repeat (yellow when on), undo, redo, save, metronome (lit when on).'
+      : name==='Free' ? 'Free mode: nothing mapped; MIDI-learn these notes in REAPER if you want.' : 'LoopCanvas actions fire on the hit; colours identify the mode.';
+    $('shiftBtn').setAttribute('aria-pressed',String(state.shift));
+    $('backBtn').setAttribute('aria-pressed',String(B()));
+    $('dawBtn').setAttribute('aria-pressed',String(!L()&&state.layout===1));
+    document.querySelectorAll('.layer button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.layer===state.layer)));
+  }
+  document.addEventListener('click',e=>{
+    const lb=e.target.closest('.layer button'); if(lb){ state.layer=lb.dataset.layer; render(); return; }
+    const pad=e.target.closest('.pad');
+    if(pad){ const k=+pad.dataset.padk; if(state.shift&&k>=9&&k<=11){ state.knob=k-9; state.shift=false; render(); } return; }
+    const b=e.target.closest('button.sel'); if(!b||b.classList.contains('static')) return;
+    if(b.id==='modeBtn') state.mode=(state.mode+1)%5;
+    if(b.id==='dawBtn') state.layout=1-state.layout;
+    if(b.id==='shiftBtn') state.shift=!state.shift;
+    if(b.id==='backBtn') state.back=!state.back;
+    if(b.dataset.bankstep) state.bank=Math.min(3,Math.max(0,state.bank+ +b.dataset.bankstep));
+    if(b.dataset.padstep) state.pad=(state.pad+ +b.dataset.padstep+5)%5;
+    render();
+  });
+  render();
+})();
+</script>

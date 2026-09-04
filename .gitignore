@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.log
+midi_capture.txt
+key_probe.txt
+.DS_Store
+Thumbs.db
