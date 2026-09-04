@@ -15,7 +15,7 @@ import lupa
 HERE = os.path.dirname(os.path.abspath(__file__))
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 UPDATE_GOLDEN = "--update-golden" in sys.argv
-EDITOR_DIR = ARGS[0] if len(ARGS) > 0 else os.path.join(HERE, "..", "reaper", "Scripts", "Oxygen Pro", "midi_control_center")
+EDITOR_DIR = ARGS[0] if len(ARGS) > 0 else os.path.join(HERE, "..", "reaper", "Scripts", "MIDI Control Center", "midi_control_center")
 GOLDEN = os.path.join(HERE, "golden", "live.preset.golden.luau")
 REFERENCE = ARGS[1] if len(ARGS) > 1 else GOLDEN
 EDITOR_DIR = os.path.abspath(EDITOR_DIR).replace("\\", "/")
