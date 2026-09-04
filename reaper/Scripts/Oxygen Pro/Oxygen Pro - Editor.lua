@@ -67,6 +67,22 @@ local FB_MODES  = { 'Off', 'Record', 'Select', 'Mute', 'Solo' }                 
 local KNOB_FNS  = { 'Pan', 'Device (focused FX)', 'Send 1 per track', 'Selected track sends' } -- knob function (runtime)
 local KNOB_SHORT = { 'Pan', 'FX', 'Send1', 'SelSnd' }
 
+-- Exquis (optional second surface): display colours of the LED names, short assignment texts
+local EXQUIS_RGBA = {}
+for _, n in ipairs(M.EXQUIS_RGB) do EXQUIS_RGBA[n] = RGBA[n] or RGBA.off end
+local EXQUIS_BUILTIN_SHORT = { transport_play = 'Play/stop', transport_record = 'Record', transport_loop = 'Repeat',
+                               transport_stop = 'Stop', tap_tempo = 'Tap tempo' }
+local EXQUIS_ENCODER_SHORT = { none = '-', selected_volume = 'Sel vol', selected_pan = 'Sel pan', master_volume = 'Master vol',
+                               selected_send = 'Sel send', browse_tracks = 'Browse trk', tempo = 'Tempo', fx_param = 'FX param',
+                               zoom = 'Zoom', actions = 'Actions' }
+local EXQUIS_PUSH_SHORT = { none = '-', selected_mute = 'Sel mute', selected_solo = 'Sel solo', selected_arm = 'Sel arm', tap_tempo = 'Tap tempo' }
+local EXQUIS_ELEM = {}      -- button id -> element / CC number
+for _, b in ipairs(M.EXQUIS_BUTTONS) do EXQUIS_ELEM[b.id] = b.elem end
+local EXQUIS_ENC_CC, EXQUIS_PUSH_CC, EXQUIS_SLIDER_CC = { 110, 111, 112, 113 }, { 114, 115, 116, 117 }, { 80, 81, 82, 83, 84, 85 }
+local DEVICES = { { id = 'oxygen', name = 'Oxygen Pro 61' }, { id = 'exquis', name = 'Exquis' } }
+local EXQUIS_LAYERS = { { id = 'normal', name = 'Normal' }, { id = 'shift', name = 'Shift (FCB1010 held)' } }
+local EXQUIS_HINT = 'off = no Exquis preset is written; needs the Exquis unit from the first-time setup and firmware 2.1+'
+
 -- ================================================================================================
 -- 2. State
 -- ================================================================================================
@@ -77,13 +93,17 @@ local undo_stack, redo_stack = {}, {}
 local UNDO_MAX = 60
 local last_undo = { key = nil, t = 0 }
 local sel  = { kind = nil }      -- button{id} | encoder | pad{k} | bank{sub,i} | layout | padmode
+                                 -- Exquis: {dev='exquis', kind='button'|'encoder'|'push'|'slider', id=...}
 local view = { layout = 1, mode = 1, bank = 1, layer = 'normal', follow = false, fb_mode = 0, knob_fn = 0,
                zoom = tonumber(reaper.GetExtState(EXT, 'zoom')) or 1.0,
-               show_modifiers = false }   -- "Modifiers..." management section at the top of the inspector
+               show_modifiers = false,    -- "Modifiers..." management section at the top of the inspector
+               device = reaper.GetExtState(EXT, 'device') == 'exquis' and 'exquis' or 'oxygen',   -- Device switch
+               xlayer = 'normal' }        -- Exquis layer being edited: 'normal' | 'shift'
 local live = nil                 -- last state.read()
 local picker = { active = false, uid = nil, resolver = nil, field = nil }
 local last_error = nil
 local pending_apply, apply_running = false, false
+local last_action = nil
 local pending_dock = tonumber(reaper.GetExtState(EXT, 'dock'))
 if pending_dock == 0 then pending_dock = nil end
 local name_cache = {}
@@ -185,6 +205,25 @@ local function name_of(items, id)
   return tostring(id)
 end
 
+-- ---- Exquis section of the model (created on demand; every sub-table nil-safe) ----------------------
+local function exquis()
+  if type(model.exquis) ~= 'table' then model.exquis = M.exquis_default() end
+  local x = model.exquis
+  x.buttons  = x.buttons  or {}
+  x.encoders = x.encoders or {}
+  x.pushes   = x.pushes   or {}
+  x.slider   = x.slider   or {}
+  x.shift    = x.shift    or { buttons = {}, encoders = {} }
+  x.shift.buttons  = x.shift.buttons  or {}
+  x.shift.encoders = x.shift.encoders or {}
+  return x
+end
+-- button / encoder tables of an Exquis layer ('normal' | 'shift')
+local function xbuttons_of(layer)  local x = exquis(); return layer == 'shift' and x.shift.buttons or x.buttons end
+local function xencoders_of(layer) local x = exquis(); return layer == 'shift' and x.shift.encoders or x.encoders end
+local function xlayer_name(layer) return layer == 'shift' and 'Shift (FCB1010 held)' or 'Normal' end
+local function xpath(layer, field) return 'model.exquis.' .. (layer == 'shift' and 'shift.' or '') .. field end
+
 -- ---- REAPER lookups ------------------------------------------------------------------------------
 local function action_name(cmd)
   local id = cmd
@@ -260,6 +299,46 @@ local function encoder_text(e, long)
   return e.kind == 'browse_tracks' and 'Browse tracks' or 'Zoom'
 end
 
+-- ---- Exquis assignment text + colours -------------------------------------------------------------
+local function xbutton_text(a, long)
+  if type(a) ~= 'table' or a.kind == nil or a.kind == 'none' then return '-' end
+  if a.kind == 'builtin' then return long and name_of(M.EXQUIS_BUTTON_BUILTINS, a.builtin) or (EXQUIS_BUILTIN_SHORT[a.builtin] or tostring(a.builtin)) end
+  if a.kind == 'action' then return command_text(a.command, long) end
+  return '?'
+end
+local function xencoder_text(a, long)
+  if type(a) ~= 'table' or a.kind == nil or a.kind == 'none' then return '-' end
+  if a.kind == 'actions' then
+    if long then return 'CW ' .. command_text(a.cw, true) .. ' / CCW ' .. command_text(a.ccw, true) end
+    return 'CW ' .. command_text(a.cw) .. ' / CCW ' .. command_text(a.ccw)
+  end
+  local n = math.floor(tonumber(a.index) or 0) + 1
+  if a.kind == 'selected_send' then return (long and 'Selected track send ' or 'Sel send ') .. n end
+  if a.kind == 'fx_param' then return (long and 'Focused FX parameter ' or 'FX param ') .. n end
+  if long then return name_of(M.EXQUIS_ENCODER_KINDS, a.kind) end
+  return EXQUIS_ENCODER_SHORT[a.kind] or tostring(a.kind)
+end
+-- encoder pushes and slider zones share the shape {kind, command | action}
+local function xpush_text(a, long, kinds)
+  if type(a) ~= 'table' or a.kind == nil or a.kind == 'none' then return '-' end
+  if a.kind == 'action' then return command_text(a.command, long) end
+  if a.kind == 'transport' then return (long and 'Transport ' or '') .. tostring(a.action or 'PlayStop') end
+  if long then return name_of(kinds or M.EXQUIS_PUSH_KINDS, a.kind) end
+  return EXQUIS_PUSH_SHORT[a.kind] or tostring(a.kind)
+end
+
+local function half_rgba(rgba)
+  local r = ((rgba >> 24) & 0xFF) // 2; local g = ((rgba >> 16) & 0xFF) // 2; local b = ((rgba >> 8) & 0xFF) // 2
+  return (r << 24) | (g << 16) | (b << 8) | 0xFF
+end
+-- display colour of an Exquis assignment: LED name -> RGBA, halved when dim; nil colour = off
+local function xcolour(a)
+  local col = (type(a) == 'table' and a.colour and EXQUIS_RGBA[a.colour]) or RGBA.off
+  if type(a) == 'table' and a.dim then col = half_rgba(col) end
+  return col
+end
+local function has_colour(a) return type(a) == 'table' and a.colour ~= nil and a.colour ~= 'off' end
+
 -- fader / knob / fader-button meaning for a bank
 local function fader_text(b, i)
   if i == 9 then return 'Master' end
@@ -326,10 +405,16 @@ end
 -- ================================================================================================
 -- 4. Action picker (REAPER's own Actions window in pick mode)
 -- ================================================================================================
+local pending_picker = nil
 local function picker_start(uid, resolver, field)
+  -- opening REAPER's Actions window pumps messages; do it between frames, not inside one
+  pending_picker = { uid = uid, resolver = resolver, field = field }
+end
+local function picker_open_now()
+  local pk = pending_picker; pending_picker = nil
   if picker.active then reaper.PromptForAction(-1, 0, 0) end
   reaper.PromptForAction(1, 0, 0)
-  picker.active, picker.uid, picker.resolver, picker.field = true, uid, resolver, field
+  picker.active, picker.uid, picker.resolver, picker.field = true, pk.uid, pk.resolver, pk.field
 end
 
 local function picker_poll()
@@ -427,6 +512,25 @@ local function colour_combo(label, cur, allow_default, width)
     for _, name in ipairs(M.COLOUR_ORDER) do
       push_id(name)
       swatch(RGBA[name], 14); ImGui.SameLine(ctx)
+      if ImGui.Selectable(ctx, name, name == cur) then changed, value = true, name end
+      pop_id()
+    end
+    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1
+  end
+  return changed, value
+end
+
+-- Exquis LED colour combo (names from M.EXQUIS_RGB, '(none)' = nil); returns changed, new value
+local function exquis_colour_combo(label, cur, width)
+  swatch(EXQUIS_RGBA[cur or 'off'] or RGBA.off, 16); ImGui.SameLine(ctx)
+  if width then ImGui.SetNextItemWidth(ctx, width) end
+  local changed, value = false, nil
+  if ImGui.BeginCombo(ctx, label, cur or '(none)') then
+    stk.combo = stk.combo + 1
+    if ImGui.Selectable(ctx, '(none)', cur == nil) then changed, value = true, nil end
+    for _, name in ipairs(M.EXQUIS_RGB) do
+      push_id(name)
+      swatch(EXQUIS_RGBA[name], 14); ImGui.SameLine(ctx)
       if ImGui.Selectable(ctx, name, name == cur) then changed, value = true, name end
       pop_id()
     end
@@ -612,7 +716,26 @@ local function do_reset()
   after_edit('Reset to the shipped default layout')
 end
 
-local function draw_topbar()
+-- Device switch (top-left of row 1); switching drops the selection so the other panel never sees it
+local function draw_device_switch()
+  ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Device:'); ImGui.SameLine(ctx)
+  for _, d in ipairs(DEVICES) do
+    push_id('dev_' .. d.id)
+    local selected = view.device == d.id
+    if selected then push_col(ImGui.Col_Button, 0x4A6FA5FF); push_col(ImGui.Col_ButtonHovered, 0x5A80B8FF); push_col(ImGui.Col_ButtonActive, 0x3A5F95FF) end
+    if ImGui.Button(ctx, d.name) and not selected then
+      view.device = d.id
+      sel = { kind = nil }
+      reaper.SetExtState(EXT, 'device', d.id, true)
+    end
+    if selected then pop_col(3) end
+    pop_id(); ImGui.SameLine(ctx)
+  end
+  ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+end
+
+-- Oxygen Pro 61 rows of the top bar (layouts / pad mode / bank / layer, then the runtime view); ends with SameLine
+local function draw_topbar_oxygen()
   -- row 1: layouts
   ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Layout:'); ImGui.SameLine(ctx)
   for i, l in ipairs(layouts()) do
@@ -691,23 +814,51 @@ local function draw_topbar()
   local zr, nz = ImGui.SliderDouble(ctx, 'Zoom', view.zoom, 0.6, 1.8, '%.2f')
   if zr then view.zoom = nz; reaper.SetExtState(EXT, 'zoom', tostring(nz), true) end
   ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+end
 
-  if ImGui.Button(ctx, 'Apply') and not apply_running then apply_running = true; pending_apply = true end
+-- Exquis rows of the top bar (enabled + layer, then zoom); ends with SameLine like the Oxygen rows
+local function draw_topbar_exquis()
+  local x = exquis()
+  -- row 1: enabled + layer
+  local rv, ne = ImGui.Checkbox(ctx, 'Exquis enabled', x.enabled == true)
+  if rv and ne ~= (x.enabled == true) then
+    push_undo(); x.enabled = ne; after_edit(ne and 'Exquis section enabled (written on Apply)' or 'Exquis section disabled (no Exquis preset is written)')
+  end
+  ImGui.SetItemTooltip(ctx, EXQUIS_HINT)
+  ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+  ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Layer:'); ImGui.SameLine(ctx)
+  local lpick = combo_ids('##xlayer', EXQUIS_LAYERS, view.xlayer, 170)
+  if lpick then view.xlayer = lpick end
+  ImGui.SetItemTooltip(ctx, 'Normal: model.exquis.buttons / encoders.  Shift: model.exquis.shift, active while the FCB1010 foot switch is held.\nEncoder pushes and slider zones have no shift layer.')
+  ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, EXQUIS_HINT)
+  -- row 2: zoom
+  ImGui.AlignTextToFramePadding(ctx)
+  ImGui.SetNextItemWidth(ctx, 110)
+  local zr, nz = ImGui.SliderDouble(ctx, 'Zoom##xzoom', view.zoom, 0.6, 1.8, '%.2f')
+  if zr then view.zoom = nz; reaper.SetExtState(EXT, 'zoom', tostring(nz), true) end
+  ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+end
+
+local function draw_topbar()
+  draw_device_switch()
+  if view.device == 'exquis' then draw_topbar_exquis() else draw_topbar_oxygen() end
+
+  if (function() local r = ImGui.Button(ctx, 'Apply'); if r then last_action = 'Apply' end; return r end)() and not apply_running then apply_running = true; pending_apply = true end
   ImGui.SetItemTooltip(ctx, 'Generate the preset, back up the current one, write it and reload ReaLearn')
   ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, 'Save') then do_save() end
+  if (function() local r = ImGui.Button(ctx, 'Save'); if r then last_action = 'Save' end; return r end)() then do_save() end
   ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, 'Reload') then do_reload() end
+  if (function() local r = ImGui.Button(ctx, 'Reload'); if r then last_action = 'Reload' end; return r end)() then do_reload() end
   ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, 'Reset to default') then do_reset() end
+  if (function() local r = ImGui.Button(ctx, 'Reset to default'); if r then last_action = 'Reset to default' end; return r end)() then do_reset() end
   ImGui.SameLine(ctx)
   ImGui.SameLine(ctx)
   begin_disabled(#undo_stack == 0)
-  if ImGui.Button(ctx, 'Undo') then undo() end
+  if (function() local r = ImGui.Button(ctx, 'Undo'); if r then last_action = 'Undo' end; return r end)() then undo() end
   end_disabled()
   ImGui.SameLine(ctx)
   begin_disabled(#redo_stack == 0)
-  if ImGui.Button(ctx, 'Redo') then redo() end
+  if (function() local r = ImGui.Button(ctx, 'Redo'); if r then last_action = 'Redo' end; return r end)() then redo() end
   end_disabled()
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, ImGui.IsWindowDocked(ctx) and 'Undock' or 'Dock') then
@@ -716,6 +867,11 @@ local function draw_topbar()
 
   -- status line + validation
   if status.col then ImGui.TextColored(ctx, status.col, status.text) else ImGui.Text(ctx, status.text) end
+  if type(model.exquis) == 'table' and model.exquis.enabled then
+    ImGui.SameLine(ctx); ImGui.TextColored(ctx, C.ok, '  |  Exquis section: enabled')
+  elseif view.device == 'exquis' then
+    ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, '  |  Exquis section: off (no Exquis preset is written)')
+  end
   if last_error then
     ImGui.TextColored(ctx, C.err, 'Script error: ' .. tostring(last_error)); ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, 'Clear') then last_error = nil end
@@ -773,7 +929,7 @@ local function hit(id, x, y, w, h)
 end
 
 local function is_sel(kind, a, b)
-  if sel.kind ~= kind then return false end
+  if sel.dev or sel.kind ~= kind then return false end   -- sel.dev = an Exquis selection, never an Oxygen one
   if kind == 'button' then return sel.id == a end
   if kind == 'pad' then return sel.k == a end
   if kind == 'bank' then return sel.sub == a and sel.i == b end
@@ -889,7 +1045,7 @@ local function draw_centre()
   ImGui.DrawList_AddCircle(G.dl, X(ecx), Y(ecy), r * G.z, C.line, 0, 1)
   ImGui.DrawList_AddCircleFilled(G.dl, X(ecx), Y(ecy), 8 * G.z, C.btn)
   ImGui.DrawList_AddLine(G.dl, X(ecx), Y(ecy - r + 2), X(ecx), Y(ecy - r + 7), C.ink, 2)
-  if sel.kind == 'encoder' then ImGui.DrawList_AddCircle(G.dl, X(ecx), Y(ecy), (r + 2) * G.z, C.sel, 0, 2) end
+  if sel.kind == 'encoder' and not sel.dev then ImGui.DrawList_AddCircle(G.dl, X(ecx), Y(ecy), (r + 2) * G.z, C.sel, 0, 2) end
   if is_sel('button', 'encoder_press') then ImGui.DrawList_AddCircle(G.dl, X(ecx), Y(ecy), 9 * G.z, C.sel, 0, 2) end
   local turn = encoder_text(layer_encoder())
   label(ecx - 32, ecy + r + 3, 64, nil, 'Turn: ' .. turn, C.ink, 8)
@@ -986,6 +1142,125 @@ local function draw_panel()
   draw_right()
   ImGui.SetCursorScreenPos(ctx, G.ox, G.oy)
   ImGui.Dummy(ctx, PANEL_W * G.z, PANEL_H * G.z)
+end
+
+-- ---- Exquis panel ------------------------------------------------------------------------------------
+local EXQ_W, EXQ_H = 660, 560
+
+local function xsel(kind, id) return sel.dev == 'exquis' and sel.kind == kind and sel.id == id end
+local function xselect(kind, id) sel = { dev = 'exquis', kind = kind, id = id } end
+
+local function draw_exquis_panel()
+  G.ox, G.oy = ImGui.GetCursorScreenPos(ctx)
+  G.z = view.zoom
+  G.dl = ImGui.GetWindowDrawList(ctx)
+  local x = exquis()
+  local layer = view.xlayer
+  local shift = layer == 'shift'
+  local btns, encs, pushes, slider = xbuttons_of(layer), xencoders_of(layer), x.pushes, x.slider
+  local lname = xlayer_name(layer)
+  rect(0, 0, EXQ_W, EXQ_H, C.bg, 12)
+  ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(14), Y(6), C.ink, 'INTUITIVE INSTRUMENTS   Exquis')
+  ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(EXQ_W - 200), Y(6), shift and C.armed or C.muted,
+    shift and 'Shift layer (FCB1010 held)' or 'Normal layer')
+  if not x.enabled then
+    ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(14), Y(EXQ_H - 14), C.err,
+      'Section disabled: no Exquis preset is written on Apply (tick "Exquis enabled" in the top bar)')
+  end
+
+  -- encoders (CC 110-113): ring = turn, centre = push (CC 114-117); push text under each
+  for i = 1, 4 do
+    local a, p = encs[i], pushes[i]
+    local cx, cy, r = 100 + (i - 1) * 150, 62, 20
+    local clicked, hovered = hit('xenc' .. i, cx - r - 5, cy - r - 5, 2 * r + 10, 2 * r + 10)
+    label(cx - 65, 22, 130, nil, string.format('Encoder %d  (CC %d)', i, EXQUIS_ENC_CC[i]), C.muted, 8)
+    ImGui.DrawList_AddCircle(G.dl, X(cx), Y(cy), (r + 4) * G.z, xcolour(a), 0, 3 * G.z)      -- LED ring
+    ImGui.DrawList_AddCircleFilled(G.dl, X(cx), Y(cy), r * G.z, hovered and C.btn_hover or C.knob)
+    ImGui.DrawList_AddCircle(G.dl, X(cx), Y(cy), r * G.z, hovered and C.white or C.line, 0, 1)
+    ImGui.DrawList_AddCircleFilled(G.dl, X(cx), Y(cy), 8 * G.z, C.btn)
+    ImGui.DrawList_AddLine(G.dl, X(cx), Y(cy - r + 2), X(cx), Y(cy - r + 8), C.ink, 2)
+    if xsel('encoder', i) then ImGui.DrawList_AddCircle(G.dl, X(cx), Y(cy), (r + 7) * G.z, C.sel, 0, 2) end
+    if xsel('push', i) then ImGui.DrawList_AddCircle(G.dl, X(cx), Y(cy), 9 * G.z, C.sel, 0, 2) end
+    label(cx - 70, cy + r + 8, 140, nil, xencoder_text(a), C.ink, 9)
+    local py = cy + r + 22
+    local pclicked, phovered = hit('xpush' .. i, cx - 65, py, 130, 14)
+    rect(cx - 65, py, 130, 14, phovered and C.btn_hover or C.btn_static, 3, phovered and C.white or C.line)
+    ImGui.DrawList_AddCircleFilled(G.dl, X(cx - 58), Y(py + 7), 3 * G.z, xcolour(p))          -- push LED
+    label(cx - 52, py, 117, 14, 'Push: ' .. xpush_text(p), C.ink, 8)
+    if xsel('push', i) then outline(cx - 65, py, 130, 14, C.sel, 2, 3) end
+    if hovered then
+      ImGui.SetTooltip(ctx, string.format('Encoder %d (CC %d; ring = turn, centre = push)\n%s: %s\nPush (CC %d, no shift layer): %s',
+        i, EXQUIS_ENC_CC[i], lname, xencoder_text(a, true), EXQUIS_PUSH_CC[i], xpush_text(p, true)))
+    end
+    if phovered then ImGui.SetTooltip(ctx, string.format('Encoder %d push (CC %d, no shift layer): %s', i, EXQUIS_PUSH_CC[i], xpush_text(p, true))) end
+    if clicked then
+      local mx, my = ImGui.GetMousePos(ctx)
+      local dx, dy = (mx - X(cx)) / G.z, (my - Y(cy)) / G.z
+      if dx * dx + dy * dy <= 81 then xselect('push', i) else xselect('encoder', i) end
+    end
+    if pclicked then xselect('push', i) end
+  end
+
+  -- slider: six zones (CC 80-85)
+  ImGui.DrawList_AddTextEx(G.dl, font, 8 * G.z, X(40), Y(126), C.muted, 'Slider zones 1-6  (CC 80-85, no shift layer)')
+  for k = 1, 6 do
+    local a = slider[k]
+    local zx, zy, zw, zh = 40 + (k - 1) * 97, 138, 90, 30
+    local clicked, hovered = hit('xsl' .. k, zx, zy, zw, zh)
+    local col = xcolour(a)
+    local fill = has_colour(a) and half_rgba(col) or (hovered and C.btn_hover or C.btn)
+    rect(zx, zy, zw, zh, fill, 4, hovered and C.white or C.line)
+    rect(zx + 4, zy + zh - 6, zw - 8, 3, col, 1)                                             -- zone LED
+    local ink = ink_for(fill)
+    ImGui.DrawList_AddTextEx(G.dl, font, 7 * G.z, X(zx + 3), Y(zy + 2), ink, tostring(k))
+    label(zx + 8, zy + 3, zw - 12, 16, xpush_text(a, false, M.EXQUIS_SLIDER_KINDS), ink, 9)
+    if xsel('slider', k) then outline(zx, zy, zw, zh, C.sel, 2, 4) end
+    if hovered then ImGui.SetTooltip(ctx, string.format('Slider zone %d (CC %d, no shift layer): %s', k, EXQUIS_SLIDER_CC[k], xpush_text(a, true, M.EXQUIS_SLIDER_KINDS))) end
+    if clicked then xselect('slider', k) end
+  end
+
+  -- buttons: Record, Loop, Clips, Play/Stop  /  Down, Up, Undo, Redo
+  local rows = { { 'record', 'loop', 'clips', 'play' }, { 'down', 'up', 'undo', 'redo' } }
+  for ri, row in ipairs(rows) do
+    for j, id in ipairs(row) do
+      local a = btns[id]
+      local bx, by, bw, bh = 40 + (j - 1) * 150, 188 + (ri - 1) * 64, 130, 52
+      local clicked, hovered = hit('xbtn_' .. id, bx, by, bw, bh)
+      local col = xcolour(a)
+      local fill = has_colour(a) and half_rgba(col) or (hovered and C.btn_hover or C.btn)
+      rect(bx, by, bw, bh, fill, 6, hovered and C.white or C.line)
+      rect(bx + 6, by + 5, bw - 12, 4, col, 2)                                                -- button LED
+      local ink = ink_for(fill)
+      ImGui.DrawList_AddTextEx(G.dl, font, 8 * G.z, X(bx + 6), Y(by + 12), ink,
+        string.format('%s  (CC %d)', name_of(M.EXQUIS_BUTTONS, id), EXQUIS_ELEM[id] or 0))
+      label(bx + 4, by + 24, bw - 8, 24, xbutton_text(a), ink, 10)
+      if xsel('button', id) then outline(bx, by, bw, bh, C.sel, 2, 6) end
+      if hovered then
+        ImGui.SetTooltip(ctx, string.format('%s (CC %d)\n%s: %s', name_of(M.EXQUIS_BUTTONS, id), EXQUIS_ELEM[id] or 0, lname, xbutton_text(a, true)))
+      end
+      if clicked then xselect('button', id) end
+    end
+  end
+
+  -- pads: hexagon grid placeholder (11 columns of 6 / 5 = 61 keys); native MPE, not remapped
+  local hx, hy, hw, hh = 20, 320, EXQ_W - 40, EXQ_H - 320 - 24
+  rect(hx, hy, hw, hh, 0x17181CFF, 8, C.line)
+  label(hx, hy + 6, hw, nil, '61 keys - MPE, not remapped (pads stay native)', C.muted, 10)
+  local hr = 16
+  local colw, rowh = hr * 1.5, hr * 1.7320508
+  local gx0 = hx + (hw - (10 * colw + 2 * hr)) / 2 + hr
+  local gy0 = hy + 34 + hr
+  for c = 0, 10 do
+    local odd = c % 2 == 1
+    for rr = 0, (odd and 4 or 5) do
+      local cx, cy = gx0 + c * colw, gy0 + rr * rowh + (odd and rowh / 2 or 0)
+      ImGui.DrawList_AddCircleFilled(G.dl, X(cx), Y(cy), (hr - 1.5) * G.z, C.btn, 6)
+      ImGui.DrawList_AddCircle(G.dl, X(cx), Y(cy), (hr - 1.5) * G.z, C.line, 6, 1)
+    end
+  end
+
+  ImGui.SetCursorScreenPos(ctx, G.ox, G.oy)
+  ImGui.Dummy(ctx, EXQ_W * G.z, EXQ_H * G.z)
 end
 
 -- ================================================================================================
@@ -1276,22 +1551,168 @@ local function draw_modifiers_panel()
   ImGui.Spacing(ctx)
 end
 
-local function draw_inspector()
-  if view.show_modifiers then draw_modifiers_panel() end
-  if sel.kind == 'button' then inspect_button(sel.id)
-  elseif sel.kind == 'encoder' then inspect_encoder()
-  elseif sel.kind == 'pad' then inspect_pad(sel.k)
-  elseif sel.kind == 'bank' then inspect_bank()
-  elseif sel.kind == 'layout' then inspect_layout()
-  elseif sel.kind == 'padmode' then
-    ImGui.SeparatorText(ctx, 'Pad mode')
-    local pm = cur_mode()
-    if pm then inspect_pad_mode(pm, false) end
+-- ---- Exquis inspector --------------------------------------------------------------------------------
+-- colour combo + dim checkbox shared by every Exquis control; `a` is the live assignment table
+local function exquis_colour_dim(uid, a)
+  local ch, v = exquis_colour_combo('Colour##xcol_' .. uid, a.colour, -FLT_MIN)
+  if ch then push_undo(); a.colour = v; after_edit() end
+  local rv, nd = ImGui.Checkbox(ctx, 'Dim##xdim_' .. uid, a.dim == true)
+  if rv and nd ~= (a.dim == true) then push_undo(); a.dim = nd or nil; after_edit() end
+  ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, 'LED colour ((none) = unlit); dim = low brightness')
+end
+
+local function set_exquis_button_kind(a, kind)
+  local keep = { kind = kind, colour = a.colour, dim = a.dim }
+  if kind == 'builtin' then keep.builtin = a.builtin or 'transport_play'
+  elseif kind == 'action' then keep.command = a.command or 0 end
+  set_table(a, keep)
+end
+
+local function inspect_exquis_button(id, layer)
+  local elem = EXQUIS_ELEM[id]
+  if not elem then ImGui.Text(ctx, 'Unknown Exquis button ' .. tostring(id)); return end
+  ImGui.SeparatorText(ctx, 'Exquis ' .. name_of(M.EXQUIS_BUTTONS, id) .. '  (CC ' .. elem .. ')')
+  ImGui.TextDisabled(ctx, xlayer_name(layer) .. ' layer: ' .. xpath(layer, 'buttons.' .. id))
+  if layer == 'shift' then
+    ImGui.TextDisabled(ctx, 'Fires while the FCB1010 foot switch is held (shift CC ' .. tostring(exquis().shift_cc or 105) .. ')')
+  end
+  local uid = 'xbtn_' .. layer .. '_' .. id
+  local function resolver()
+    local t = xbuttons_of(layer)
+    if type(t[id]) ~= 'table' then t[id] = { kind = 'none' } end
+    return t[id]
+  end
+  local a = resolver()
+  local kinds = { { 'none', 'Nothing' }, { 'builtin', 'Built-in' }, { 'action', 'Action' } }
+  local cur = a.kind or 'none'
+  for i, k in ipairs(kinds) do
+    if ImGui.RadioButton(ctx, k[2] .. '##' .. uid, cur == k[1]) and cur ~= k[1] then
+      push_undo(); set_exquis_button_kind(a, k[1]); after_edit()
+    end
+    if i < #kinds then ImGui.SameLine(ctx) end
+  end
+  if a.kind == 'builtin' then
+    local pick = combo_ids('Function##xfn_' .. uid, M.EXQUIS_BUTTON_BUILTINS, a.builtin, -FLT_MIN)
+    if pick then push_undo(); a.builtin = pick; after_edit() end
+  elseif a.kind == 'action' then
+    command_widget(uid, resolver, 'command')
+  elseif a.kind ~= nil and a.kind ~= 'none' then
+    ImGui.TextColored(ctx, C.err, 'Unknown kind: ' .. tostring(a.kind))
+  end
+  exquis_colour_dim(uid, a)
+end
+
+local function inspect_exquis_encoder(i, layer)
+  ImGui.SeparatorText(ctx, string.format('Exquis encoder %d  (CC %d)', i, EXQUIS_ENC_CC[i] or 0))
+  ImGui.TextDisabled(ctx, xlayer_name(layer) .. ' layer: ' .. xpath(layer, 'encoders[' .. i .. ']'))
+  local uid = 'xenc_' .. layer .. '_' .. i
+  local function resolver()
+    local t = xencoders_of(layer)
+    if type(t[i]) ~= 'table' then t[i] = { kind = 'none' } end
+    return t[i]
+  end
+  local a = resolver()
+  local pick = combo_ids('Kind##' .. uid, M.EXQUIS_ENCODER_KINDS, a.kind or 'none', -FLT_MIN)
+  if pick and pick ~= a.kind then
+    push_undo()
+    local keep = { kind = pick, colour = a.colour, dim = a.dim }
+    if pick == 'selected_send' or pick == 'fx_param' then keep.index = a.index or 0
+    elseif pick == 'actions' then keep.cw = a.cw or 0; keep.ccw = a.ccw or 0 end
+    set_table(a, keep)
+    after_edit()
+  end
+  if a.kind == 'selected_send' or a.kind == 'fx_param' then
+    push_id(uid .. '_idx')
+    ImGui.SetNextItemWidth(ctx, 90)
+    local cur = math.floor(tonumber(a.index) or 0) + 1
+    local rv, nv = ImGui.InputInt(ctx, a.kind == 'selected_send' and 'Send number' or 'FX parameter number', cur, 1, 8)
+    if rv and nv ~= cur then push_undo('xidx' .. uid); a.index = math.max(0, nv - 1); after_edit() end
+    pop_id()
+    ImGui.TextDisabled(ctx, a.kind == 'selected_send' and 'Send N of the selected track (shown 1-based; model.index is 0-based)'
+                                                        or 'Parameter N of the focused FX (shown 1-based; model.index is 0-based)')
+  elseif a.kind == 'actions' then
+    ImGui.Text(ctx, 'Clockwise'); command_widget(uid .. '_cw', resolver, 'cw')
+    ImGui.Text(ctx, 'Anticlockwise'); command_widget(uid .. '_ccw', resolver, 'ccw')
+  end
+  exquis_colour_dim(uid, a)
+end
+
+-- encoder pushes and slider zones: kind combo, action command or transport action, colour + dim
+local function edit_exquis_trigger(uid, resolver, kinds)
+  local a = resolver()
+  local pick = combo_ids('Kind##' .. uid, kinds, a.kind or 'none', -FLT_MIN)
+  if pick and pick ~= a.kind then
+    push_undo()
+    local keep = { kind = pick, colour = a.colour, dim = a.dim }
+    if pick == 'action' then keep.command = a.command or 0
+    elseif pick == 'transport' then keep.action = a.action or 'PlayStop' end
+    set_table(a, keep)
+    after_edit()
+  end
+  if a.kind == 'action' then
+    command_widget(uid, resolver, 'command')
+  elseif a.kind == 'transport' then
+    local tp = combo_strings('Transport##' .. uid, M.TRANSPORT_ACTIONS, a.action or 'PlayStop', -FLT_MIN)
+    if tp then push_undo(); a.action = tp; after_edit() end
+    ImGui.TextDisabled(ctx, 'Toggle; the LED follows the transport state')
+  end
+  exquis_colour_dim(uid, a)
+end
+
+local function inspect_exquis_push(i)
+  ImGui.SeparatorText(ctx, string.format('Exquis encoder %d push  (CC %d)', i, EXQUIS_PUSH_CC[i] or 0))
+  ImGui.TextDisabled(ctx, 'model.exquis.pushes[' .. i .. ']  (no shift layer)')
+  edit_exquis_trigger('xpush_' .. i, function()
+    local t = exquis().pushes
+    if type(t[i]) ~= 'table' then t[i] = { kind = 'none' } end
+    return t[i]
+  end, M.EXQUIS_PUSH_KINDS)
+end
+
+local function inspect_exquis_slider(k)
+  ImGui.SeparatorText(ctx, string.format('Exquis slider zone %d  (CC %d)', k, EXQUIS_SLIDER_CC[k] or 0))
+  ImGui.TextDisabled(ctx, 'model.exquis.slider[' .. k .. ']  (no shift layer)')
+  edit_exquis_trigger('xsl_' .. k, function()
+    local t = exquis().slider
+    if type(t[k]) ~= 'table' then t[k] = { kind = 'none' } end
+    return t[k]
+  end, M.EXQUIS_SLIDER_KINDS)
+end
+
+local function draw_exquis_inspector()
+  local layer = view.xlayer
+  if sel.dev == 'exquis' and sel.kind == 'button' then inspect_exquis_button(sel.id, layer)
+  elseif sel.dev == 'exquis' and sel.kind == 'encoder' then inspect_exquis_encoder(sel.id, layer)
+  elseif sel.dev == 'exquis' and sel.kind == 'push' then inspect_exquis_push(sel.id)
+  elseif sel.dev == 'exquis' and sel.kind == 'slider' then inspect_exquis_slider(sel.id)
   else
-    ImGui.SeparatorText(ctx, 'Inspector')
-    ImGui.TextWrapped(ctx, 'Click a control on the panel to edit it: transport and bank buttons, the Back / DAW buttons, the encoder (ring = turn, centre = press), pads, faders, knobs, fader buttons and the side buttons next to the pads.')
+    ImGui.SeparatorText(ctx, 'Exquis inspector')
+    ImGui.TextWrapped(ctx, 'Click a control on the Exquis panel to edit it: the four encoders (ring = turn, centre or the "Push" line = push), the six slider zones, and the eight buttons. The pads stay native MPE and are not remapped.')
     ImGui.Spacing(ctx)
-    ImGui.TextWrapped(ctx, 'The Layer combo switches between the normal assignments and what each modifier (a latched button, or an external hold modifier such as a foot switch) gives the other buttons. "Modifiers..." in the top bar manages external modifiers. Ctrl+Z / Ctrl+Y undo and redo.')
+    ImGui.TextWrapped(ctx, 'The Layer combo switches between the normal assignments and the shift layer (model.exquis.shift), active while the FCB1010 foot switch is held. Only buttons and encoder turns have a shift layer. Ctrl+Z / Ctrl+Y undo and redo.')
+  end
+end
+
+local function draw_inspector()
+  if view.device == 'exquis' then
+    draw_exquis_inspector()
+  else
+    if view.show_modifiers then draw_modifiers_panel() end
+    if sel.kind == 'button' then inspect_button(sel.id)
+    elseif sel.kind == 'encoder' then inspect_encoder()
+    elseif sel.kind == 'pad' then inspect_pad(sel.k)
+    elseif sel.kind == 'bank' then inspect_bank()
+    elseif sel.kind == 'layout' then inspect_layout()
+    elseif sel.kind == 'padmode' then
+      ImGui.SeparatorText(ctx, 'Pad mode')
+      local pm = cur_mode()
+      if pm then inspect_pad_mode(pm, false) end
+    else
+      ImGui.SeparatorText(ctx, 'Inspector')
+      ImGui.TextWrapped(ctx, 'Click a control on the panel to edit it: transport and bank buttons, the Back / DAW buttons, the encoder (ring = turn, centre = press), pads, faders, knobs, fader buttons and the side buttons next to the pads.')
+      ImGui.Spacing(ctx)
+      ImGui.TextWrapped(ctx, 'The Layer combo switches between the normal assignments and what each modifier (a latched button, or an external hold modifier such as a foot switch) gives the other buttons. "Modifiers..." in the top bar manages external modifiers. Ctrl+Z / Ctrl+Y undo and redo.')
+    end
   end
   ImGui.Spacing(ctx); ImGui.Separator(ctx)
   ImGui.TextDisabled(ctx, string.format('%d undo steps  |  model: %s', #undo_stack, apply.MODEL_PATH))
@@ -1330,7 +1751,7 @@ local function frame()
   local avail_w = ImGui.GetContentRegionAvail(ctx)
   local insp_w = math.max(300, math.min(420, avail_w * 0.32))
   if begin_child('panel', avail_w - insp_w - 8, 0, ImGui.ChildFlags_Borders, ImGui.WindowFlags_HorizontalScrollbar) then
-    draw_panel()
+    if view.device == 'exquis' then draw_exquis_panel() else draw_panel() end
     end_child()
   end
   ImGui.SameLine(ctx)
@@ -1366,9 +1787,18 @@ local function loop()
       last_error = tostring(err)
       unwind()
     end
-    ImGui.End(ctx)
+    -- ReaImGui may have collected the context during the frame (a call inside it pumped messages); never
+    -- call End/PopFont on a dead context, just rebuild it next cycle
+    if ImGui.ValidatePtr(ctx, 'ImGui_Context*') then
+      ImGui.End(ctx)
+      ImGui.PopFont(ctx)
+    else
+      last_error = 'ImGui context was lost during the frame (rebuilt); last action: ' .. tostring(last_action)
+    end
+  elseif ImGui.ValidatePtr(ctx, 'ImGui_Context*') then
+    ImGui.PopFont(ctx)
   end
-  ImGui.PopFont(ctx)
+  if pending_picker then picker_open_now() end
   if open then reaper.defer(loop) end
 end
 
