@@ -140,7 +140,7 @@ else
 end
 
 -- 5. register the editor and the watcher as actions (so they appear in the Actions list without a manual Load) ----
-for _, name in ipairs({ "Oxygen Pro - Editor.lua", "Oxygen Pro - Live watcher.lua", "Oxygen Pro - LED unlock.lua", "Exquis - Developer mode off.lua" }) do
+for _, name in ipairs({ "Oxygen Pro - Editor.lua", "Oxygen Pro - Live watcher.lua", "Oxygen Pro - LED unlock.lua", "Exquis - Developer mode off.lua", "Exquis - Capture layout snapshot.lua" }) do
   local path = res .. "/Scripts/Oxygen Pro/" .. name
   local f = io.open(path, "r")
   if f then

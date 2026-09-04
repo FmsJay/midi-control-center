@@ -79,6 +79,26 @@ Oxygen keeps its fixed track banks. The shift comes from the FCB1010 bridge unit
 into the Oxygen's port (see `FCB1010_SHIFT.md`). Change the layout in the editor (Device switch > Exquis); the preset is generated from `model.exquis` by
 `oxygen_editor/exquis_interpreter.luau`, and `tests/test_exquis.py` keeps it equal to the golden reference.
 
+## Layouts, the app, and keeping your layout across restarts
+
+The note layout of the keys is not something REAPER sets; it lives on the Exquis. The Exquis app's Note Layout Editor
+builds **isomorphic** layouts from two semitone intervals ("the number of semitones between two pairs of hexagons,
+propagated to the entire keyboard") or **free** layouts with a MIDI value and colour per key, and can flip the
+expression axes for a keyboard used sideways. The keyboard stores 8 layouts; pick one on the device with Settings 2
+plus encoder 3. The vendor's own rule is "do not use the Exquis application simultaneously with another software or
+synthesizer": design the layout in the app, drag it onto the keyboard, close the app, reconnect with REAPER.
+
+A Jankó-style layout is the isomorphic rule "2 semitones along one axis, 1 semitone along the other" (whole tones
+along a row, the next row a semitone up, so every other row repeats). With the keyboard on its side (encoders on the
+left, buttons and slider on the right) choose the axis that runs left-right for you as the 2-semitone one and flip
+the X/Y expression axes in the editor so pitch bend still follows sideways finger movement.
+
+To make REAPER put the keyboard into your chosen layout every time it starts: set the layout on the device, then run
+the action **Exquis - Capture layout snapshot** once. It stores the Developer-Mode snapshot (layout + MIDI settings)
+in `oxygen_editor/exquis_snapshot.txt`; from the next Apply on, the Exquis unit restores it on load. Delete the file to
+stop that. Leaving the keyboard's own Settings menu resets its LEDs; the Live watcher notices the refresh message and
+repaints them.
+
 ## Sources
 
 Developer Mode specification (Intuitive Instruments, via dualo.com resources), Exquis User Guide 3.0.0, the

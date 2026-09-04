@@ -55,11 +55,19 @@ local function led(id, target, on, off, condition)
 end
 local function paint(id, c, condition) led(id, { kind = "Dummy" }, c, c, condition) end
 
+-- Layout snapshot (cmd 09): captured with "Exquis - Capture layout snapshot.lua"; restored every time the unit loads so
+-- the keyboard always comes up in that layout. Sent as raw sysex from the activation hook of the dev-mode mapping.
+local ON_ACTIVATE = nil
+if type(MODEL.snapshot) == "string" and #MODEL.snapshot > 0 then
+    ON_ACTIVATE = { send_midi_feedback = { { kind = "Raw", message = "F0 00 21 7E 7F 00 2E F7" }, { kind = "Raw", message = "F0 00 21 7E 7F 09 " .. MODEL.snapshot .. " F7" } } }
+end
+
 -- Developer Mode on load (feedback-only mapping fires once when the unit activates); hand back on unload
 add { id = "devmode", name = "Exquis Developer Mode (encoders, slider, up/down, buttons)", control_enabled = false,
       source = { kind = "MidiScript", script_kind = "Lua",
                  script = "return { address = 0, messages = { { 0xF0, 0x00, 0x21, 0x7E, 0x7F, 0x00, 0x2E, 0xF7 } } }" },
       target = { kind = "Dummy" },
+      on_activate = ON_ACTIVATE,
       on_deactivate = { send_midi_feedback = { { kind = "Raw", message = "F0 00 21 7E 7F 00 00 F7" } } } }
 
 -- shift (external hold, injected by the FCB1010 bridge)

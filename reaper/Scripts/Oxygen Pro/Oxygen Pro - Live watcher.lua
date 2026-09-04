@@ -136,6 +136,35 @@ local function tap(now)
   end
 end
 
+-- Exquis: leaving its on-device Settings menu resets every LED (it announces this with sysex F0 00 21 7E 7F 03 ...).
+-- Re-arm Developer Mode for the non-pad zones and ask ReaLearn to repaint shortly after.
+local EXQUIS_REFRESH = string.char(0xF0, 0x00, 0x21, 0x7E, 0x7F, 0x03)
+local function exquis_output()
+  for i = 0, reaper.GetNumMIDIOutputs() - 1 do
+    local ok, name = reaper.GetMIDIOutputNameNoAlias(i, "")
+    if ok and name == "Exquis" then return i end
+  end
+end
+local exquis_repaint_at = nil
+local function exquis_refresh_seen(now, buf)
+  -- entering the menu sends 03 7F; only repaint on the way out (anything else, or no page byte)
+  local page = buf:byte(7)
+  if page == 0x7F then return end
+  exquis_repaint_at = now + 0.3
+end
+local function exquis_repaint(now)
+  if not exquis_repaint_at or now < exquis_repaint_at then return end
+  exquis_repaint_at = nil
+  local out = exquis_output()
+  if out then
+    local m = string.char(0xF0, 0x00, 0x21, 0x7E, 0x7F, 0x00, 0x2E, 0xF7)
+    reaper.SendMIDIMessageToHardware(out, m, #m)
+  end
+  local cmd = reaper.NamedCommandLookup(RESYNC_CMD)
+  if cmd ~= 0 then reaper.Main_OnCommand(cmd, 0) end
+  log("Exquis left its settings menu; repainted")
+end
+
 -- DAW button: CC 113 with a non-zero value on channel 1, from any control-enabled device.
 local function poll_layout_button(now)
   local newest = nil
@@ -144,6 +173,7 @@ local function poll_layout_button(now)
     if not seq or seq == 0 or not buf or buf == "" then break end
     if last_seq and seq <= last_seq then break end
     if newest == nil then newest = seq end
+    if last_seq and #buf >= 6 and buf:sub(1, 6) == EXQUIS_REFRESH then exquis_refresh_seen(now, buf) end
     if last_seq and #buf >= 3 then
       local status, d1, d2 = buf:byte(1, 3)
       if status == 0xB0 and d1 == LAYOUT_CC and d2 > 0 then
@@ -184,6 +214,7 @@ local function tick()
     if present then out_idx = idx end
   end
   poll_layout_button(now)
+  exquis_repaint(now)
   while #queue > 0 and now >= queue[1].at do
     local step = table.remove(queue, 1)
     if step.resync then

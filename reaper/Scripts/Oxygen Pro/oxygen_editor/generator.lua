@@ -108,6 +108,15 @@ function G.generate_exquis(model, opts)
     local xm = {}
     for k, v in pairs(x) do xm[k] = v end
     xm.port1_input_device = model.port1_input_device or xm.port1_input_device
+    -- a captured layout snapshot (see "Exquis - Capture layout snapshot.lua") is embedded when the file exists
+    local snap = read_file(G.DIR .. "/exquis_snapshot.txt")
+    if snap then
+        local hex = {}
+        for line in snap:gmatch("[^\r\n]+") do
+            if line:sub(1, 1) ~= "#" then for h in line:gmatch("%x%x") do hex[#hex + 1] = h end end
+        end
+        if #hex > 0 then xm.snapshot = table.concat(hex, " ") end
+    end
     return head .. "local MODEL = " .. G.model_literal(xm) .. "\n\n" .. G.exquis_interpreter()
 end
 
