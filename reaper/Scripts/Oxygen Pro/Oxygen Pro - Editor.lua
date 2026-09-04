@@ -788,9 +788,10 @@ local function draw_topbar_oxygen()
   local lpick = combo_ids('##layer', litems, view.layer, 150)
   if lpick then view.layer = lpick; view.follow = false end
   ImGui.SameLine(ctx)
-  if view.show_modifiers then push_col(ImGui.Col_Button, 0x4A6FA5FF); push_col(ImGui.Col_ButtonHovered, 0x5A80B8FF); push_col(ImGui.Col_ButtonActive, 0x3A5F95FF) end
+  local mods_open = view.show_modifiers   -- capture before the click toggles it, so push and pop always match
+  if mods_open then push_col(ImGui.Col_Button, 0x4A6FA5FF); push_col(ImGui.Col_ButtonHovered, 0x5A80B8FF); push_col(ImGui.Col_ButtonActive, 0x3A5F95FF) end
   if ImGui.Button(ctx, 'Modifiers...') then view.show_modifiers = not view.show_modifiers end
-  if view.show_modifiers then pop_col(3) end
+  if mods_open then pop_col(3) end
   ImGui.SetItemTooltip(ctx, 'Show / hide the modifier management section (external hold modifiers such as a foot switch)')
 
   -- row 2: runtime view + actions
