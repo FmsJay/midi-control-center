@@ -121,6 +121,9 @@ lets you set what it does:
   where each pad is an action, a transport toggle or a track state toggle with its own colour and on-colour.
 - **Fader banks** (up to 8): 8 tracks starting anywhere, focused FX, or free.
 - **Layouts** (tabs): add as many as you like; the DAW button steps through them, the pad sweep colour is per layout.
+- **Exquis** (optional): the Device switch at the top shows the Exquis view. Tick "Exquis enabled", then assign its
+  buttons, encoders, encoder pushes and slider zones, each with an LED colour, plus a Shift layer for the foot switch.
+  Apply writes the Exquis preset next to the keyboard's. Off by default; nothing is written until you enable it.
 - **Follow keyboard** makes the drawn panel track the real one: layout, pad mode, bank, Mode, knob function and
   armed layer update as you press buttons on the hardware.
 
@@ -130,8 +133,8 @@ writes the new preset and reloads the running unit in place, no REAPER restart. 
 (Apply afterwards to put it on the keyboard). Ctrl+Z / Ctrl+Y undo and redo.
 
 How it fits together: `oxygen_editor/model.lua` (the data model, validation, the default layout),
-`generator.lua` + `interpreter.luau` (model -> ReaLearn Luau; the generated preset is the model literal plus the
-interpreter, so ReaLearn, the editor and `tests/test_generator.py` run the same code), `apply.lua` (backup, write,
+`generator.lua` + `interpreter.luau` / `exquis_interpreter.luau` (model -> ReaLearn Luau; each generated preset is the model
+literal plus the interpreter, so ReaLearn, the editor and the tests run the same code), `apply.lua` (backup, write,
 reload), `state.lua` (live state, replayed from the presses the preset echoes into the port-1 input).
 `tests/test_generator.py` proves the shipped model generates exactly the frozen reference preset in `tests/golden/`
 (originally derived from, and verified equal to, the hand-written preset this project started with).
@@ -195,7 +198,7 @@ reaper/Scripts/Oxygen Pro/oxygen_editor/ model, generator, interpreter, apply, s
 reaper/Scripts/__startup.oxygen-snippet.lua   the block install.ps1 appends to Scripts/__startup.lua
 docs/                                   LIVE_MODE_MAP.md, oxygen_live_map.html (interactive), PROTOCOL.md, FCB1010_SHIFT.md, EXQUIS.md, research notes, legacy DAW-mode notes
 tools/                                  oxygen_led_unlock.py, midi_capture.py, key_probe.py; legacy/ has the abandoned DAW-preset builder
-tests/test_generator.py                 offline proof that the shipped model generates the golden preset (needs lupa)
+tests/                                  offline proof that the shipped model generates the golden presets, keyboard and Exquis (needs lupa)
 install.ps1                             copies everything into a REAPER resource folder
 ```
 

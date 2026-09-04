@@ -17,6 +17,8 @@ local res = reaper.GetResourcePath()
 A.PRESET_DIR  = res .. "/Data/helgoboss/realearn/presets/main/oxygen-pro-61"
 A.PRESET      = A.PRESET_DIR .. "/live.preset.luau"
 A.MODEL_PATH  = A.DIR .. "/model.json"
+A.EXQUIS_DIR  = res .. "/Data/helgoboss/realearn/presets/main/exquis"
+A.EXQUIS_PRESET = A.EXQUIS_DIR .. "/main.preset.luau"
 A.HELGOBOX_NAME = "Helgobox - ReaLearn & Playtime"
 A.RESYNC_CMD  = "_REALEARN_SEND_ALL_FEEDBACK"
 
@@ -92,9 +94,20 @@ function A.apply(model, opts)
     local ok, werr = write_file(A.PRESET, text)
     if not ok then return false, "could not write " .. A.PRESET .. ": " .. tostring(werr) end
     model_mod.save(model, A.MODEL_PATH)
+    local exquis_note = ""
+    local xtext = generator.generate_exquis(model, { author = opts.author or "Oxygen Pro 61 editor" })
+    if xtext then
+        local xpreset, xerr = generator.evaluate(xtext)
+        if not xpreset then return false, "generated Exquis preset does not run: " .. tostring(xerr) end
+        reaper.RecursiveCreateDirectory(A.EXQUIS_DIR, 0)
+        local xcur = read_file(A.EXQUIS_PRESET)
+        if xcur then write_file(A.EXQUIS_DIR .. "/main.preset." .. os.date("%Y%m%d-%H%M%S") .. ".bak", xcur) end
+        write_file(A.EXQUIS_PRESET, xtext)
+        exquis_note = string.format(" + Exquis %d mappings", #xpreset.mappings)
+    end
     local rl_ok, rl_err = A.reload_instance()
     A.send_all_feedback()
-    local msg = string.format("wrote %d mappings to live.preset.luau", #preset.mappings)
+    local msg = string.format("wrote %d mappings to live.preset.luau", #preset.mappings) .. exquis_note
     if rl_ok then msg = msg .. "; ReaLearn reloaded" else msg = msg .. "; restart REAPER to load it (" .. tostring(rl_err) .. ")" end
     return true, msg, rl_ok
 end

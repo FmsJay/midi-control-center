@@ -87,6 +87,186 @@ local MODEL = {
     encoder_turn = {
         kind = "browse_tracks",
     },
+    exquis = {
+        buttons = {
+            clips = {
+                colour = "white",
+                command = 40157,
+                kind = "action",
+            },
+            down = {
+                colour = "azure",
+                command = 40286,
+                kind = "action",
+            },
+            loop = {
+                builtin = "transport_loop",
+                colour = "yellow",
+                kind = "builtin",
+            },
+            play = {
+                builtin = "transport_play",
+                colour = "green",
+                kind = "builtin",
+            },
+            record = {
+                builtin = "transport_record",
+                colour = "red",
+                kind = "builtin",
+            },
+            redo = {
+                colour = "violet",
+                command = 40030,
+                kind = "action",
+            },
+            undo = {
+                colour = "violet",
+                command = 40029,
+                kind = "action",
+            },
+            up = {
+                colour = "azure",
+                command = 40285,
+                kind = "action",
+            },
+        },
+        enabled = false,
+        encoders = {
+            {
+                colour = "green",
+                kind = "selected_volume",
+            },
+            {
+                colour = "azure",
+                kind = "selected_pan",
+            },
+            {
+                colour = "white",
+                kind = "browse_tracks",
+            },
+            {
+                colour = "orange",
+                kind = "tempo",
+            },
+        },
+        port1_input_device = 14,
+        pushes = {
+            {
+                colour = "red",
+                kind = "selected_mute",
+            },
+            {
+                colour = "yellow",
+                kind = "selected_solo",
+            },
+            {
+                colour = "red",
+                kind = "selected_arm",
+            },
+            {
+                colour = "white",
+                kind = "tap_tempo",
+            },
+        },
+        shift = {
+            buttons = {
+                clips = {
+                    colour = "green",
+                    command = 40026,
+                    kind = "action",
+                },
+                down = {
+                    colour = "cyan",
+                    command = 1011,
+                    kind = "action",
+                },
+                loop = {
+                    colour = "cyan",
+                    command = 40078,
+                    kind = "action",
+                },
+                play = {
+                    colour = "white",
+                    command = 40157,
+                    kind = "action",
+                },
+                record = {
+                    colour = "magenta",
+                    command = 40364,
+                    kind = "action",
+                },
+                redo = {
+                    colour = "orange",
+                    command = 40173,
+                    kind = "action",
+                },
+                undo = {
+                    colour = "orange",
+                    command = 40172,
+                    kind = "action",
+                },
+                up = {
+                    colour = "cyan",
+                    command = 1012,
+                    kind = "action",
+                },
+            },
+            encoders = {
+                {
+                    colour = "red",
+                    kind = "master_volume",
+                },
+                {
+                    colour = "yellow",
+                    index = 0,
+                    kind = "selected_send",
+                },
+                {
+                    colour = "cyan",
+                    kind = "zoom",
+                },
+                {
+                    colour = "orange",
+                    dim = true,
+                    kind = "none",
+                },
+            },
+        },
+        shift_cc = 105,
+        shift_channel = 13,
+        slider = {
+            {
+                colour = "orange",
+                command = 40161,
+                kind = "action",
+            },
+            {
+                colour = "orange",
+                command = 40162,
+                kind = "action",
+            },
+            {
+                colour = "orange",
+                command = 40163,
+                kind = "action",
+            },
+            {
+                colour = "orange",
+                command = 40164,
+                kind = "action",
+            },
+            {
+                colour = "orange",
+                command = 40165,
+                kind = "action",
+            },
+            {
+                colour = "orange",
+                command = 40166,
+                kind = "action",
+            },
+        },
+    },
     layouts = {
         {
             id = "general",
@@ -319,6 +499,21 @@ for _, cid in ipairs(CONTROL_ORDER) do
     end
 end
 
+-- external HOLD modifiers (another unit injects "CC on channel 14" into MIDIIN3: 127 held / 0 released)
+local EXTERNAL_IDS = {}
+for id, m in pairs(MODEL.modifiers or {}) do
+    if type(m) == "table" and type(m.external) == "table" then table.insert(EXTERNAL_IDS, id) end
+end
+table.sort(EXTERNAL_IDS)
+for _, id in ipairs(EXTERNAL_IDS) do
+    MODIFIER_PARAM[id] = NEXT_PARAM
+    table.insert(parameters, { index = NEXT_PARAM, id = "mod_" .. id, name = "Modifier (hold): " .. (MODEL.modifiers[id].external.name or id), value_count = 2, value_labels = { "up", "held" } })
+    NEXT_PARAM = NEXT_PARAM + 1
+end
+local ALL_MODIFIER_IDS = {}
+for _, cid in ipairs(CONTROL_ORDER) do if MODIFIER_PARAM[cid] then table.insert(ALL_MODIFIER_IDS, cid) end end
+for _, id in ipairs(EXTERNAL_IDS) do table.insert(ALL_MODIFIER_IDS, id) end
+
 -- Off mode: LEDs 1-4 mirror the keyboard's own ARP / Latch / Chord / Scale toggles. The firmware alternates the
 -- button's CC value between 127 and 0 on successive presses, which is exactly its local on/off state.
 local LOCAL_LED_PARAM = {}
@@ -456,7 +651,7 @@ add { id = "master", name = "Master volume", group = "global", feedback_enabled 
 -- which modifiers define a combo for a given control (base mapping is gated on all of them being off)
 local function modifiers_for(cid)
     local list = {}
-    for _, mid in ipairs(CONTROL_ORDER) do
+    for _, mid in ipairs(ALL_MODIFIER_IDS) do
         local m = MODEL.modifiers and MODEL.modifiers[mid]
         if MODIFIER_PARAM[mid] and m then
             if cid == "encoder_turn" then
@@ -507,6 +702,19 @@ for _, mid in ipairs(CONTROL_ORDER) do
                 end
             end
         end
+    end
+end
+
+-- external hold modifiers: the injected CC drives the parameter directly (127 -> held, 0 -> up); the pad indicator
+-- follows the same press/release (no latch, no drop mappings)
+for _, id in ipairs(EXTERNAL_IDS) do
+    local e = MODEL.modifiers[id].external
+    local ch = e.channel or 13
+    add { id = "modstate-" .. id, name = "Modifier (hold): " .. (e.name or id), group = "global", feedback_enabled = false,
+          source = cc_button(ch, e.cc), target = param(MODIFIER_PARAM[id]) }
+    if (e.indicator or "checkerboard") ~= "none" then
+        add { id = "modhold-echo-" .. id, name = "Hold modifier -> watcher", group = "global", feedback_enabled = false,
+              source = cc_range(ch, e.cc), target = send_to_port1("B0 68 [0gfe dcba]") }
     end
 end
 
@@ -584,8 +792,8 @@ for _, cid in ipairs(CONTROL_ORDER) do
 end
 emit_encoder(MODEL.encoder_turn, all_off(modifiers_for("encoder_turn")), "")
 
--- combos (active while the modifier layer is armed)
-for _, mid in ipairs(CONTROL_ORDER) do
+-- combos (active while the modifier layer is armed or the hold modifier is down)
+for _, mid in ipairs(ALL_MODIFIER_IDS) do
     local m = MODEL.modifiers and MODEL.modifiers[mid]
     if MODIFIER_PARAM[mid] and m then
         for _, cid in ipairs(CONTROL_ORDER) do

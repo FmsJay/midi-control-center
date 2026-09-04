@@ -76,8 +76,8 @@ hard), run the action `Exquis - Developer mode off` or power-cycle the Exquis.
 
 The encoders and pushes act on the **selected** track, so the Exquis is the "what I am working on" surface while the
 Oxygen keeps its fixed track banks. The shift comes from the FCB1010 bridge unit, which injects CC 105 on channel 14 into the Exquis input as well as
-into the Oxygen's port (see `FCB1010_SHIFT.md`). Edit the preset to change the layout; it is a short Luau file
-with helpers `button`, `shifted`, `led`, `paint`.
+into the Oxygen's port (see `FCB1010_SHIFT.md`). Change the layout in the editor (Device switch > Exquis); the preset is generated from `model.exquis` by
+`oxygen_editor/exquis_interpreter.luau`, and `tests/test_exquis.py` keeps it equal to the golden reference.
 
 ## Sources
 
