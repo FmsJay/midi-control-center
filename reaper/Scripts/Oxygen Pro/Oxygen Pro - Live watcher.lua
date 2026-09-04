@@ -41,6 +41,11 @@ local PAD_NOTE = { 40, 41, 42, 43, 48, 49, 50, 51, 36, 37, 38, 39, 44, 45, 46, 4
 
 local function log(s) reaper.ShowConsoleMsg("[oxygen] " .. s .. "\n") end
 
+-- only one watcher at a time: starting a newer copy (after editing this file) retires the running one
+local GEN_KEY = "OxygenPro61Watcher"
+local my_gen = (tonumber(reaper.GetExtState(GEN_KEY, "gen")) or 0) + 1
+reaper.SetExtState(GEN_KEY, "gen", tostring(my_gen), false)
+
 local function bytes(t)
   local s = {}
   for i, b in ipairs(t) do s[i] = string.char(b) end
@@ -199,6 +204,7 @@ local function poll_layout_button(now)
 end
 
 local function tick()
+  if (tonumber(reaper.GetExtState(GEN_KEY, "gen")) or my_gen) ~= my_gen then log("watcher generation " .. my_gen .. " retired"); return end
   local now = reaper.time_precise()
   if now >= next_poll then
     next_poll = now + POLL_SEC
