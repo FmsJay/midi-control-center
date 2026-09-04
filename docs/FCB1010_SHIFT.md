@@ -57,3 +57,11 @@ pedal.
   then pick the "FCB shift (hold)" layer and assign what each button does while the foot is down. Apply.
 
 The pad indicator (violet/rose checkerboard) follows the foot: on while held, gone on release.
+
+## Note on the controller entry (2026-09-04)
+
+The bridge unit's `controllers.json` entry must have an `output_port` as well as its `input_port`. ReaLearn 2.18
+does not create an auto unit for an input-only controller (found while debugging the SDP-120 filter, see
+`SDP120.md`). The setup script now uses the interface's own output when it has one, otherwise the Oxygen's port-3
+output as a dummy. Until this was fixed the bridge unit was never running, which is one more reason the pedal side
+is still untested.

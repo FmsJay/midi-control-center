@@ -36,6 +36,14 @@ local function find_in_match(pattern)
     if ok and n:find(pattern, 1, true) then return i, n end
   end
 end
+local function find_out_match(pattern)
+  for i = 0, reaper.GetNumMIDIOutputs() - 1 do
+    local ok, n = reaper.GetMIDIOutputNameNoAlias(i, "")
+    if ok and n:find(pattern, 1, true) then return i end
+  end
+end
+-- ReaLearn 2.18 never creates an auto unit for a controller that has only an input port (measured 2026-09-04),
+-- so input-only devices get their own output when one exists, else the Oxygen's port-3 output as a harmless dummy.
 local in3  = find_in("MIDIIN3 (Oxygen Pro 61)")
 local in1  = find_in("Oxygen Pro 61")
 local out3 = find_out("MIDIOUT3 (Oxygen Pro 61)")
@@ -49,6 +57,7 @@ log(string.format("Devices: MIDIIN3 = input %d, Oxygen Pro 61 (port 1) = input %
 -- 2. controllers.json -----------------------------------------------------------------------------
 local ctl_path = res .. "/Helgoboss/ReaLearn/controllers.json"
 local fcb_in, fcb_name = find_in_match(FCB_INPUT_MATCH)
+local fcb_out = find_out_match(FCB_INPUT_MATCH) or out3
 local exq_in, exq_out = find_in(EXQUIS_NAME), find_out(EXQUIS_NAME)
 local extra = ""
 if fcb_in then
@@ -57,10 +66,10 @@ if fcb_in then
       "id": "fcb1010-shift",
       "name": "FCB1010 hold shift (via %s)",
       "enabled": true,
-      "connection": { "kind": "Midi", "input_port": %d },
+      "connection": { "kind": "Midi", "input_port": %d, "output_port": %d },
       "default_main_preset": "fcb1010/shift"
-    }]], fcb_name, fcb_in)
-  log(string.format("FCB1010 interface '%s' = input %d", fcb_name, fcb_in))
+    }]], fcb_name, fcb_in, fcb_out)
+  log(string.format("FCB1010 interface '%s' = input %d (output %d)", fcb_name, fcb_in, fcb_out))
 else
   log("No MIDI input matching '" .. FCB_INPUT_MATCH .. "': FCB1010 unit not added (edit FCB_INPUT_MATCH at the top if needed)")
 end
@@ -78,16 +87,17 @@ else
   log("Exquis not found as both input and output: Exquis unit not added")
 end
 local sdp_in = SDP120_INPUT_NAME ~= "" and find_in(SDP120_INPUT_NAME) or nil
+local sdp_out = sdp_in and (find_out(SDP120_INPUT_NAME) or out3)
 if sdp_in then
   extra = extra .. string.format([[,
     {
       "id": "sdp120-filter",
       "name": "Strich SDP-120 sysex filter (%s)",
       "enabled": true,
-      "connection": { "kind": "Midi", "input_port": %d },
+      "connection": { "kind": "Midi", "input_port": %d, "output_port": %d },
       "default_main_preset": "sdp120/filter"
-    }]], SDP120_INPUT_NAME, sdp_in)
-  log(string.format("SDP-120 piano '%s' = input %d (sysex filter unit added)", SDP120_INPUT_NAME, sdp_in))
+    }]], SDP120_INPUT_NAME, sdp_in, sdp_out)
+  log(string.format("SDP-120 piano '%s' = input %d, output %d (sysex filter unit added)", SDP120_INPUT_NAME, sdp_in, sdp_out))
 end
 local ctl = string.format([[{
   "controllers": [
@@ -153,7 +163,7 @@ else
 end
 
 -- 5. register the editor and the watcher as actions (so they appear in the Actions list without a manual Load) ----
-for _, name in ipairs({ "MIDI Control Center.lua", "Oxygen Pro - Live watcher.lua", "Oxygen Pro - LED unlock.lua", "Exquis - Developer mode off.lua", "Exquis - Capture layout snapshot.lua" }) do
+for _, name in ipairs({ "MIDI Control Center.lua", "Oxygen Pro - Live watcher.lua", "Oxygen Pro - LED unlock.lua", "Exquis - Developer mode off.lua", "Exquis - Capture layout snapshot.lua", "MIDI Control Center - Dev eval.lua" }) do
   local path = res .. "/Scripts/MIDI Control Center/" .. name
   local f = io.open(path, "r")
   if f then
