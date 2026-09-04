@@ -29,6 +29,12 @@ def blank():
     return [[(0, OFF) for _ in range(n)] for n in ROWS]   # grid[r-1][c-1] = (note, colour)
 
 
+# Measured 2026-09-04 on the real keyboard: with the encoders on the player's left, the file's LAST row is the
+# player's leftmost column. So player column p (1 = left) is file row 12 - p.
+def R(p):
+    return 12 - p
+
+
 def to_xml(name, grid, isomorphic=0, tl=3, tr=4, flipxy=1, transpose=0):
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', '',
              '<LAYOUT name="%s" isomorphic="%d" topLeftInterval="%d" topRightInterval="%d"' % (name, isomorphic, tl, tr),
@@ -49,9 +55,9 @@ def piano():
     wi = 0
     for c in range(1, 6):                                  # player lines, bottom to top
         line = []
-        for r in (2, 4, 6, 8, 10):                         # even rows = 5 whites left to right
+        for r in (2, 4, 6, 8, 10):                         # even rows = 5 whites left to right (player view)
             note = seq[wi]; wi += 1
-            g[r - 1][c - 1] = (note, WHITE)
+            g[R(r) - 1][c - 1] = (note, WHITE)
             line.append(note)
         # black spots on the odd rows at x = c + 1: left end, four betweens, right end
         prev_note = seq[wi - 6] if wi >= 6 else None       # last white of the line below
@@ -59,9 +65,9 @@ def piano():
         pairs = [(prev_note, line[0])] + list(zip(line, line[1:])) + [(line[-1], next_note)]
         for r, (lo, hi) in zip((1, 3, 5, 7, 9, 11), pairs):
             if lo is not None and hi is not None and hi - lo == 2:
-                g[r - 1][c] = (lo + 1, BLACK)              # index c = x position c + 1
+                g[R(r) - 1][c] = (lo + 1, BLACK)           # index c = x position c + 1
             elif lo is not None and hi is None:
-                g[r - 1][c] = (lo + 1, BLACK)              # F#6 at the very end
+                g[R(r) - 1][c] = (lo + 1, BLACK)           # F#6 at the very end
     return to_xml("REAPER Piano (sideways)", g)
 
 
@@ -70,8 +76,8 @@ def drums():
     cols = ["ffff3030", "ffff9020", "ffffe030", "ff30e040"]
     note = 36
     for c in range(1, 5):                                  # four player lines
-        for r in (2, 4, 6, 8):                             # four keys per line
-            g[r - 1][c - 1] = (note, cols[c - 1]); note += 1
+        for r in (2, 4, 6, 8):                             # four keys per line, from the player's left
+            g[R(r) - 1][c - 1] = (note, cols[c - 1]); note += 1
     return to_xml("REAPER Drums 4x4", g)
 
 
