@@ -532,8 +532,23 @@ local function unwind()
 end
 
 -- combo over {id,name} items; returns the newly chosen id or nil
+-- a fixed combo width is only a minimum: grow it so the longest entry (and the arrow) fits, up to the space left
+local function fit_combo_width(width, texts)
+  if not width or width <= 0 then return width end
+  local widest = 0
+  for _, t in ipairs(texts) do
+    local w = ImGui.CalcTextSize(ctx, tostring(t))
+    if w > widest then widest = w end
+  end
+  local avail = ImGui.GetContentRegionAvail(ctx)
+  return math.max(width, math.min(widest + 44, avail))
+end
 local function combo_ids(label, items, cur, width)
-  if width then ImGui.SetNextItemWidth(ctx, width) end
+  if width then
+    local names = {}
+    for i, it in ipairs(items) do names[i] = it.name end
+    ImGui.SetNextItemWidth(ctx, fit_combo_width(width, names))
+  end
   local chosen
   if ImGui.BeginCombo(ctx, label, name_of(items, cur)) then
     stk.combo = stk.combo + 1
@@ -548,7 +563,7 @@ end
 
 -- combo over plain strings; returns the newly chosen string or nil
 local function combo_strings(label, list, cur, width)
-  if width then ImGui.SetNextItemWidth(ctx, width) end
+  if width then ImGui.SetNextItemWidth(ctx, fit_combo_width(width, list)) end
   local chosen
   if ImGui.BeginCombo(ctx, label, tostring(cur or '-')) then
     stk.combo = stk.combo + 1
