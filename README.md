@@ -161,7 +161,7 @@ To check a change compiles before restarting, run it through any Lua 5.4 / Luau 
 - **Exquis** (`docs/EXQUIS.md`). A second ReaLearn unit puts the Exquis into Developer Mode for its encoders, slider
   and buttons while the hexagonal keys keep sending MPE to your instruments. Transport, undo/redo, track browsing,
   selected-track volume/pan/mute/solo/arm, tempo, markers on the slider, RGB LEDs from REAPER state, and the same
-  foot-switch shift as the keyboard. Verified on firmware 3.0.0. Close the Exquis app first; it owns the port.
+  foot-switch shift as the keyboard. Verified on firmware 3.0.0. Start REAPER before the Exquis app if you keep the app open.
 
 Both are added by the first-time setup script when it finds the devices (edit the two names at its top if yours differ).
 
@@ -198,7 +198,7 @@ reaper/Scripts/Oxygen Pro/oxygen_editor/ model, generator, interpreter, apply, s
 reaper/Scripts/__startup.oxygen-snippet.lua   the block install.ps1 appends to Scripts/__startup.lua
 docs/                                   LIVE_MODE_MAP.md, oxygen_live_map.html (interactive), PROTOCOL.md, FCB1010_SHIFT.md, EXQUIS.md, research notes, legacy DAW-mode notes
 tools/                                  oxygen_led_unlock.py, midi_capture.py, key_probe.py, exquis_layouts.py; legacy/ has the abandoned DAW-preset builder
-exquis-layouts/                         piano (sideways), drums 4x4 and factory layouts for the Exquis app
+exquis-layouts/                         Janko, piano (sideways), drums 4x4 and factory layouts for the Exquis app
 tests/                                  offline proof that the shipped model generates the golden presets, keyboard and Exquis (needs lupa)
 install.ps1                             copies everything into a REAPER resource folder
 ```
