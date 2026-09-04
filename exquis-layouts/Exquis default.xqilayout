@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<LAYOUT name="Exquis default" isomorphic="1" topLeftInterval="3" topRightInterval="4"
+        twoPath="1" transpose="0" flipX="0" flipY="0" flipXY="0">
+  <NOTE_LIST>
+    <NOTE noteNumber="48" colour="ff40c0ff"/>
+    <NOTE noteNumber="49" colour="ff713a82"/>
+    <NOTE noteNumber="50" colour="ffffe88b"/>
+    <NOTE noteNumber="51" colour="ff713a82"/>
+    <NOTE noteNumber="52" colour="ffffe88b"/>
+    <NOTE noteNumber="53" colour="ffffe88b"/>
+    <NOTE noteNumber="52" colour="ffffe88b"/>
+    <NOTE noteNumber="53" colour="ffffe88b"/>
+    <NOTE noteNumber="54" colour="ff713a82"/>
+    <NOTE noteNumber="55" colour="ffffe88b"/>
+    <NOTE noteNumber="56" colour="ff713a82"/>
+    <NOTE noteNumber="55" colour="ffffe88b"/>
+    <NOTE noteNumber="56" colour="ff713a82"/>
+    <NOTE noteNumber="57" colour="ffffe88b"/>
+    <NOTE noteNumber="58" colour="ff713a82"/>
+    <NOTE noteNumber="59" colour="ffffe88b"/>
+    <NOTE noteNumber="60" colour="ff40c0ff"/>
+    <NOTE noteNumber="59" colour="ffffe88b"/>
+    <NOTE noteNumber="60" colour="ff40c0ff"/>
+    <NOTE noteNumber="61" colour="ff713a82"/>
+    <NOTE noteNumber="62" colour="ffffe88b"/>
+    <NOTE noteNumber="63" colour="ff713a82"/>
+    <NOTE noteNumber="62" colour="ffffe88b"/>
+    <NOTE noteNumber="63" colour="ff713a82"/>
+    <NOTE noteNumber="64" colour="ffffe88b"/>
+    <NOTE noteNumber="65" colour="ffffe88b"/>
+    <NOTE noteNumber="66" colour="ff713a82"/>
+    <NOTE noteNumber="67" colour="ffffe88b"/>
+    <NOTE noteNumber="66" colour="ff713a82"/>
+    <NOTE noteNumber="67" colour="ffffe88b"/>
+    <NOTE noteNumber="68" colour="ff713a82"/>
+    <NOTE noteNumber="69" colour="ffffe88b"/>
+    <NOTE noteNumber="70" colour="ff713a82"/>
+    <NOTE noteNumber="69" colour="ffffe88b"/>
+    <NOTE noteNumber="70" colour="ff713a82"/>
+    <NOTE noteNumber="71" colour="ffffe88b"/>
+    <NOTE noteNumber="72" colour="ff40c0ff"/>
+    <NOTE noteNumber="73" colour="ff713a82"/>
+    <NOTE noteNumber="74" colour="ffffe88b"/>
+    <NOTE noteNumber="73" colour="ff713a82"/>
+    <NOTE noteNumber="74" colour="ffffe88b"/>
+    <NOTE noteNumber="75" colour="ff713a82"/>
+    <NOTE noteNumber="76" colour="ffffe88b"/>
+    <NOTE noteNumber="77" colour="ffffe88b"/>
+    <NOTE noteNumber="76" colour="ffffe88b"/>
+    <NOTE noteNumber="77" colour="ffffe88b"/>
+    <NOTE noteNumber="78" colour="ff713a82"/>
+    <NOTE noteNumber="79" colour="ffffe88b"/>
+    <NOTE noteNumber="80" colour="ff713a82"/>
+    <NOTE noteNumber="81" colour="ffffe88b"/>
+    <NOTE noteNumber="80" colour="ff713a82"/>
+    <NOTE noteNumber="81" colour="ffffe88b"/>
+    <NOTE noteNumber="82" colour="ff713a82"/>
+    <NOTE noteNumber="83" colour="ffffe88b"/>
+    <NOTE noteNumber="84" colour="ff40c0ff"/>
+    <NOTE noteNumber="83" colour="ffffe88b"/>
+    <NOTE noteNumber="84" colour="ff40c0ff"/>
+    <NOTE noteNumber="85" colour="ff713a82"/>
+    <NOTE noteNumber="86" colour="ffffe88b"/>
+    <NOTE noteNumber="87" colour="ff713a82"/>
+    <NOTE noteNumber="88" colour="ffffe88b"/>
+  </NOTE_LIST>
+</LAYOUT>

@@ -197,7 +197,8 @@ reaper/Scripts/Oxygen Pro/              editor, watcher, first-time setup, LED u
 reaper/Scripts/Oxygen Pro/oxygen_editor/ model, generator, interpreter, apply, state, json (the editor's engine)
 reaper/Scripts/__startup.oxygen-snippet.lua   the block install.ps1 appends to Scripts/__startup.lua
 docs/                                   LIVE_MODE_MAP.md, oxygen_live_map.html (interactive), PROTOCOL.md, FCB1010_SHIFT.md, EXQUIS.md, research notes, legacy DAW-mode notes
-tools/                                  oxygen_led_unlock.py, midi_capture.py, key_probe.py; legacy/ has the abandoned DAW-preset builder
+tools/                                  oxygen_led_unlock.py, midi_capture.py, key_probe.py, exquis_layouts.py; legacy/ has the abandoned DAW-preset builder
+exquis-layouts/                         piano (sideways), drums 4x4 and factory layouts for the Exquis app
 tests/                                  offline proof that the shipped model generates the golden presets, keyboard and Exquis (needs lupa)
 install.ps1                             copies everything into a REAPER resource folder
 ```
