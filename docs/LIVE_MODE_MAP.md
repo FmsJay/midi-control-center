@@ -7,7 +7,7 @@ keyboard does no bank paging of its own, and ReaLearn holds all state. One ReaLe
 `Data/helgoboss/realearn/presets/main/oxygen-pro-61/live.preset.luau`, input `MIDIIN3` (control-only in REAPER),
 output `MIDIOUT3`. Interactive version of this page: `oxygen_live_map.html`.
 
-Measured message map: `reaper` skill FINDINGS F-0019 / F-0020. Whole setup: F-0021.
+Measured message map: `PROTOCOL.md`. **LoopCanvas** below refers to a looper that is still work in progress; its pads call `_LOOPCANVAS_*` actions that do nothing until it ships.
 
 ## Global (every bank, every layout)
 

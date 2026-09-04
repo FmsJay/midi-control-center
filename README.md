@@ -19,13 +19,13 @@ Interactive map of every control: open `docs/oxygen_live_map.html` in a browser.
   the selected track's sends 1-8.
 - **Pad modes** stepped with the two side buttons, colours change instantly: drums (hits re-injected into the
   port-1 input on channel 10, colour by velocity), mixer mute/solo pads with live state colours, markers and utilities,
-  and, in the second layout, LoopCanvas looper actions.
-- **Two layouts** (General DAW / LoopCanvas) toggled by the DAW button, with a green or azure pad sweep as the
-  indicator, because the keyboard's screen cannot be written from the host.
+  and a second layout reserved for a looper (work in progress, see below).
+- **Two layouts** toggled by the DAW button (General DAW, and the work-in-progress LoopCanvas layout), with a green
+  or azure pad sweep as the indicator, because the keyboard's screen cannot be written from the host.
 - **Transport**, go to start / end, **encoder** browses tracks, **encoder press = tap tempo** (sets REAPER's BPM).
 - **Back = one-shot layer**: press Back (pads show a violet/rose checkerboard), then a button: << / >> undo / redo,
-  Bank < / > previous / next marker, Play insert marker, Record metronome, Loop mixer, Stop save (or cancel a
-  LoopCanvas section change), encoder zoom / insert track.
+  Bank < / > previous / next marker, Play insert marker, Record metronome, Loop mixer, Stop save, encoder zoom /
+  insert track.
 - **Aftertouch, chord mode, scale mode, arpeggiator, note repeat** keep working; they are keyboard-local.
 - **Self-healing**: a ReaScript watcher re-arms Live mode and the LEDs every time the keyboard is powered on.
 
@@ -36,9 +36,8 @@ Interactive map of every control: open `docs/oxygen_live_map.html` in a browser.
 | REAPER | 7.79, Windows 11 | Any 7.x should work. macOS/Linux untested (port names differ, see below) |
 | Helgobox (ReaLearn) | 2.18.2 | <https://www.helgoboss.org/projects/helgobox/> - install the VST3 or VST2 into REAPER |
 | Oxygen Pro 61 firmware | 2.1.2 | Older firmware may not have the Live mode. Update with M-Audio's installer |
-| Windows MIDI | MIDI Services (multi-client) | Needed only if you want the Python tools to run beside REAPER |
-| Python 3 + `python-rtmidi` | 3.14 | Optional, only for `tools/` (LED unlock without REAPER, MIDI capture) |
-| LoopCanvas | any | Optional. The LoopCanvas layout calls `_LOOPCANVAS_*` actions; without it those pads do nothing |
+
+That is all the core needs: no Python, no extra MIDI drivers, no other extensions. See *Optional extras* below for the diagnostic tools and the work-in-progress looper layout.
 
 The keyboard shows up as four MIDI ports. This integration uses:
 
@@ -111,6 +110,22 @@ must come from the 13-entry palette in `docs/PROTOCOL.md`; anything else shows a
 
 To check a change compiles before restarting, run it through any Lua 5.4 / Luau interpreter:
 `lua -e "dofile('live.preset.luau')"` (the file returns a table and uses no ReaLearn-only globals).
+
+## Optional extras
+
+None of these is needed for the integration to work.
+
+- **`tools/` (Python 3 + `python-rtmidi`)**: `oxygen_led_unlock.py` sends the Live-mode sysex without REAPER
+  (`--restore` hands the LEDs back to the firmware), `midi_capture.py` records both keyboard ports to a text file,
+  `key_probe.py` shows which keystrokes the keyboard types for a Shift combination. To run them while REAPER holds
+  the ports you need a multi-client MIDI stack (Windows MIDI Services on Windows 11, CoreMIDI on macOS); otherwise
+  close REAPER first.
+- **LoopCanvas layout (work in progress)**: the second layout's pad modes call `_LOOPCANVAS_*` actions for a looper
+  that is not released yet. They are in the preset so the layout is ready when it ships; until then those pads do
+  nothing and the DAW button still switches layouts. Replace the action names in `live.preset.luau` if you want
+  the layout for something else.
+- **`docs/legacy-*` and `tools/legacy/`**: the abandoned DAW-mode approach (User DAW preset built from the
+  factory file), kept for anyone who needs the `.OxygenPro61DawPreset` byte layout.
 
 ## Known limits
 
