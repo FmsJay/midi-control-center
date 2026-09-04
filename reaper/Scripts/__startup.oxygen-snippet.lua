@@ -10,7 +10,6 @@ do
   -- every power-on, then asks ReaLearn to repaint. Runs as a defer loop inside REAPER.
   local watcher = reaper.GetResourcePath() .. "/Scripts/Oxygen Pro/Oxygen Pro - Live watcher.lua"
   local ok, err = pcall(dofile, watcher)
-  if not ok then reaper.ShowConsoleMsg("[oxygen] watcher failed: " .. tostring(err) .. "
-") end
+  if not ok then reaper.ShowConsoleMsg("[oxygen] watcher failed: " .. tostring(err) .. "\n") end
 end
 -- <<< Oxygen Pro 61 LED unlock <<<
