@@ -55,11 +55,15 @@ function S.poll()
 end
 
 -- returns the tracked state (0-based indices); `synced` tells whether any echo has been seen yet
+-- `c.modifiers` may list modifier ids; the checkerboard echo (CC 104) is shared by every modifier, so all of them
+-- report the same held/armed flag (at most two exist)
 function S.read(c)
     S.set_counts(c)
     S.poll()
-    return { bank = st.bank, mode = st.mode, knob = st.knob, pad = st.pad, layout = st.layout,
-             mod_back = st.mod and 1 or 0, synced = st.synced }
+    local out = { bank = st.bank, mode = st.mode, knob = st.knob, pad = st.pad, layout = st.layout,
+                  mod_back = st.mod and 1 or 0, synced = st.synced }
+    for _, id in ipairs((c and c.modifiers) or {}) do out["mod_" .. id] = st.mod and 1 or 0 end
+    return out
 end
 
 -- let the editor assume a state (e.g. after Apply, ReaLearn parameters restart at 0)

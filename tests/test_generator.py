@@ -168,6 +168,20 @@ def main():
     assert by_id["loop"]["target"]["command"] == 40073, by_id["loop"]
     assert by_id["lay0-p4-pad-3"]["target"]["command"] == 40001
     assert "c = 60" in by_id["lay0-p4-paint-3"]["source"]["script"]
+    # an external HOLD modifier (foot switch injected as CC 105 on channel 14)
+    m3 = model_mod.copy(model)
+    m3["modifiers"]["fcb"] = L.table(external=L.table(name="FCB shift", cc=105, channel=13), combos=L.table(play=L.table(kind="action", command=40029)))
+    assert not to_py(model_mod.validate(m3)), to_py(model_mod.validate(m3))
+    g3 = load_preset(L, gen.generate(m3, L.table(date="test")), "external-modifier")
+    by3 = {m["id"]: m for m in g3["mappings"]}
+    pidx = [p["index"] for p in g3["parameters"] if p["id"] == "mod_fcb"][0]
+    assert by3["modstate-fcb"]["source"]["controller_number"] == 105 and by3["modstate-fcb"]["source"]["channel"] == 13
+    assert "glue" not in by3["modstate-fcb"], "hold modifier must not be a toggle"
+    assert by3["mod-fcb-play"]["activation_condition"]["modifiers"][0] == {"parameter": pidx, "on": True}
+    assert not any(k.startswith("moddrop-fcb") for k in by3), "hold modifiers must not have drop mappings"
+    play_conds = by3["play"]["activation_condition"]["modifiers"]
+    assert {"parameter": pidx, "on": False} in play_conds, play_conds
+    print("external hold modifier OK")
     # validation catches nonsense
     bad = model_mod.copy(model)
     bad["buttons"]["play"] = L.table(kind="action", command=-5)

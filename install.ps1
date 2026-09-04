@@ -34,6 +34,11 @@ $ctlDst     = Join-Path $ReaperResourcePath "Helgoboss\ReaLearn\controllers.json
 New-Item -ItemType Directory -Force $presetDst | Out-Null
 New-Item -ItemType Directory -Force $scriptDst | Out-Null
 Copy-Item (Join-Path $repo "realearn\presets\main\oxygen-pro-61\*.luau") $presetDst -Force
+foreach ($sub in @("fcb1010", "exquis")) {
+    $d = Join-Path $ReaperResourcePath "Data\helgobossealearn\presets\main\$sub"
+    New-Item -ItemType Directory -Force $d | Out-Null
+    Copy-Item (Join-Path $repo "realearn\presets\main\$sub\*.luau") $d -Force
+}
 Copy-Item (Join-Path $repo "reaper\Scripts\Oxygen Pro\*.lua") $scriptDst -Force
 New-Item -ItemType Directory -Force (Join-Path $scriptDst "oxygen_editor") | Out-Null
 Copy-Item (Join-Path $repo "reaper\Scripts\Oxygen Pro\oxygen_editor\*") (Join-Path $scriptDst "oxygen_editor") -Force

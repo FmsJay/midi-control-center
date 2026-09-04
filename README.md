@@ -149,6 +149,19 @@ must come from the 13-entry palette in `docs/PROTOCOL.md`; anything else shows a
 To check a change compiles before restarting, run it through any Lua 5.4 / Luau interpreter:
 `lua -e "dofile('live.preset.luau')"` (the file returns a table and uses no ReaLearn-only globals).
 
+## Other devices
+
+- **FCB1010 foot switch as a true hold shift** (`docs/FCB1010_SHIFT.md`). One switch programmed as a NOTE preset
+  becomes a real hold modifier for the keyboard: a small ReaLearn unit on the pedal's interface injects a CC into the
+  keyboard's port while the foot is down, and the editor's "external hold modifier" layer decides what every button
+  does meanwhile. The Oxygen itself cannot do this (no two-button chords), so this is the only way to get press-and-hold.
+- **Exquis** (`docs/EXQUIS.md`). A second ReaLearn unit puts the Exquis into Developer Mode for its encoders, slider
+  and buttons while the hexagonal keys keep sending MPE to your instruments. Transport, undo/redo, track browsing,
+  selected-track volume/pan/mute/solo/arm, tempo, markers on the slider, RGB LEDs from REAPER state, and the same
+  foot-switch shift as the keyboard. Close the Exquis app first; it owns the port.
+
+Both are added by the first-time setup script when it finds the devices (edit the two names at its top if yours differ).
+
 ## Optional extras
 
 None of these is needed for the integration to work.
@@ -175,11 +188,12 @@ None of these is needed for the integration to work.
 
 ```
 realearn/presets/main/oxygen-pro-61/   live.preset.luau, pads.preset.luau     -> Data/helgoboss/realearn/presets/main/oxygen-pro-61/
+realearn/presets/main/fcb1010/, exquis/  the foot-switch shift bridge and the Exquis surface
 realearn/controllers.template.json      managed controllers                     -> Helgoboss/ReaLearn/controllers.json
-reaper/Scripts/Oxygen Pro/              editor, watcher, first-time setup, LED unlock, flash test, dev hook -> Scripts/Oxygen Pro/
+reaper/Scripts/Oxygen Pro/              editor, watcher, first-time setup, LED unlock, flash test, dev hook, Exquis dev-mode off -> Scripts/Oxygen Pro/
 reaper/Scripts/Oxygen Pro/oxygen_editor/ model, generator, interpreter, apply, state, json (the editor's engine)
 reaper/Scripts/__startup.oxygen-snippet.lua   the block install.ps1 appends to Scripts/__startup.lua
-docs/                                   LIVE_MODE_MAP.md, oxygen_live_map.html (interactive), PROTOCOL.md, legacy DAW-mode notes
+docs/                                   LIVE_MODE_MAP.md, oxygen_live_map.html (interactive), PROTOCOL.md, FCB1010_SHIFT.md, EXQUIS.md, research notes, legacy DAW-mode notes
 tools/                                  oxygen_led_unlock.py, midi_capture.py, key_probe.py; legacy/ has the abandoned DAW-preset builder
 tests/test_generator.py                 offline proof that the shipped model generates the golden preset (needs lupa)
 install.ps1                             copies everything into a REAPER resource folder

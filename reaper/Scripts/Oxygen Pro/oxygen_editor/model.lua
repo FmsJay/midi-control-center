@@ -83,6 +83,33 @@ M.BANK_KINDS = {
 
 M.MODIFIER_INDICATORS = { { id = "checkerboard", name = "Violet/rose checkerboard on the pads" }, { id = "none", name = "No pad indicator" } }
 
+-- External HOLD modifiers: a message from another device (e.g. a foot switch) that another ReaLearn unit injects into
+-- the MIDIIN3 input as a CC on channel 14 (0-based 13). 127 = held, 0 = released. Unlike the keyboard's buttons this is a
+-- real hold: combos fire while the foot is down, nothing is latched. They live in model.modifiers[id] with an
+-- `external = { name, cc, channel }` block instead of a button assignment.
+M.EXTERNAL_CHANNEL = 13
+function M.is_external_modifier(model, id)
+    local m = model.modifiers and model.modifiers[id]
+    return type(m) == "table" and type(m.external) == "table"
+end
+-- all modifier ids in a stable order: modifier buttons first (control order), then external ones (sorted)
+function M.modifier_ids(model)
+    local ids = {}
+    for _, c in ipairs(M.CONTROLS) do
+        local a = model.buttons and model.buttons[c.id]
+        if a and a.kind == "modifier" then ids[#ids + 1] = c.id end
+    end
+    local ext = {}
+    for id, m in pairs(model.modifiers or {}) do if type(m) == "table" and type(m.external) == "table" then ext[#ext + 1] = id end end
+    table.sort(ext)
+    for _, id in ipairs(ext) do ids[#ids + 1] = id end
+    return ids
+end
+function M.modifier_name(model, id)
+    if M.is_external_modifier(model, id) then return model.modifiers[id].external.name or id end
+    return M.CONTROL_BY_ID[id] and M.CONTROL_BY_ID[id].name or id
+end
+
 -- ---- default model = the hand-built layout ------------------------------------------------------
 local function action(command, colour, on_colour)
     return { kind = "action", command = command, colour = colour, on_colour = on_colour }
@@ -240,7 +267,6 @@ function M.validate(model)
         check_button_assignment(buttons[c.id], "button " .. c.id, errors, true)
         if type(buttons[c.id]) == "table" and buttons[c.id].kind == "modifier" then modifier_count = modifier_count + 1 end
     end
-    if modifier_count > 2 then errors[#errors + 1] = "at most two modifier buttons (ReaLearn conditions take two modifiers)" end
     local et = model.encoder_turn or { kind = "none" }
     if et.kind == "actions" then
         if not is_command(et.cw) or not is_command(et.ccw) then errors[#errors + 1] = "encoder_turn: cw and ccw commands required" end
@@ -248,7 +274,13 @@ function M.validate(model)
         errors[#errors + 1] = "encoder_turn: unknown kind '" .. tostring(et.kind) .. "'"
     end
     for mid, m in pairs(model.modifiers or {}) do
-        if not (buttons[mid] and buttons[mid].kind == "modifier") then errors[#errors + 1] = "modifiers." .. mid .. ": button is not declared as a modifier" end
+        if type(m) == "table" and type(m.external) == "table" then
+            local e = m.external
+            if type(mid) ~= "string" or not mid:match("^[%w_]+$") then errors[#errors + 1] = "external modifier id must be letters/digits/underscore" end
+            if type(e.cc) ~= "number" or e.cc < 0 or e.cc > 127 then errors[#errors + 1] = "modifiers." .. tostring(mid) .. ": external cc must be 0-127" end
+            if e.channel ~= nil and (type(e.channel) ~= "number" or e.channel < 0 or e.channel > 15) then errors[#errors + 1] = "modifiers." .. tostring(mid) .. ": external channel must be 0-15" end
+            modifier_count = modifier_count + 1
+        elseif not (buttons[mid] and buttons[mid].kind == "modifier") then errors[#errors + 1] = "modifiers." .. mid .. ": button is not declared as a modifier" end
         for cid, a in pairs(m.combos or {}) do
             if not M.CONTROL_BY_ID[cid] then errors[#errors + 1] = "modifiers." .. mid .. ": unknown control '" .. tostring(cid) .. "'"
             elseif cid == mid then errors[#errors + 1] = "modifiers." .. mid .. ": a modifier cannot combine with itself"
@@ -268,6 +300,7 @@ function M.validate(model)
             errors[#errors + 1] = "modifiers." .. mid .. ".encoder_turn: cw and ccw commands required"
         end
     end
+    if modifier_count > 2 then errors[#errors + 1] = "at most two modifiers in total (ReaLearn conditions take two modifiers)" end
     if type(model.port1_input_device) ~= "number" then errors[#errors + 1] = "port1_input_device must be a number" end
     return errors
 end

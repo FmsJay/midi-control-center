@@ -78,7 +78,8 @@ local UNDO_MAX = 60
 local last_undo = { key = nil, t = 0 }
 local sel  = { kind = nil }      -- button{id} | encoder | pad{k} | bank{sub,i} | layout | padmode
 local view = { layout = 1, mode = 1, bank = 1, layer = 'normal', follow = false, fb_mode = 0, knob_fn = 0,
-               zoom = tonumber(reaper.GetExtState(EXT, 'zoom')) or 1.0 }
+               zoom = tonumber(reaper.GetExtState(EXT, 'zoom')) or 1.0,
+               show_modifiers = false }   -- "Modifiers..." management section at the top of the inspector
 local live = nil                 -- last state.read()
 local picker = { active = false, uid = nil, resolver = nil, field = nil }
 local last_error = nil
@@ -99,6 +100,8 @@ local function push_undo(key)
   last_undo.key, last_undo.t = key, now
 end
 
+-- drops "none" combos only; a modifier entry itself is never removed here (external hold modifiers
+-- legitimately exist with empty combos, and button modifiers are removed by set_button_kind)
 local function prune()
   for _, m in pairs(model.modifiers or {}) do
     for cid, a in pairs(m.combos or {}) do
@@ -140,13 +143,16 @@ local function cur_modes()  local l = cur_layout(); if l then l.pad_modes = l.pa
 local function cur_mode()   return cur_modes()[view.mode] end
 local function cur_bank()   return banks()[view.bank] end
 
-local function modifier_ids()
-  local out = {}
-  for _, c in ipairs(M.CONTROLS) do
-    local a = buttons()[c.id]
-    if type(a) == 'table' and a.kind == 'modifier' then out[#out + 1] = c.id end
-  end
-  return out
+-- every layer id: modifier buttons first (control order), then external hold modifiers (sorted)
+local function modifier_ids() return M.modifier_ids(model) end
+local function is_external(id) return M.is_external_modifier(model, id) end
+
+-- human label of a layer id ('normal' | modifier button id | external modifier id)
+local function layer_label(id)
+  if id == 'normal' then return 'Normal' end
+  local n = M.modifier_name(model, id)
+  if is_external(id) then return n .. ' (hold)' end
+  return n .. ' layer'
 end
 
 local function clamp_view()
@@ -155,8 +161,9 @@ local function clamp_view()
   view.mode   = math.max(1, math.min(view.mode, math.max(1, #cur_modes())))
   view.bank   = math.max(1, math.min(view.bank, math.max(1, #banks())))
   if view.layer ~= 'normal' then
-    local a = buttons()[view.layer]
-    if not (type(a) == 'table' and a.kind == 'modifier') then view.layer = 'normal' end
+    local found = false
+    for _, id in ipairs(modifier_ids()) do if id == view.layer then found = true; break end end
+    if not found then view.layer = 'normal' end
   end
 end
 
@@ -231,7 +238,7 @@ end
 -- what button `id` does in the selected layer
 local function layer_assignment(id)
   if view.layer == 'normal' then return (model.buttons or {})[id] end
-  if id == view.layer then return { kind = 'modifier' } end
+  if id == view.layer and not is_external(view.layer) then return { kind = 'modifier' } end
   local m = (model.modifiers or {})[view.layer]
   return m and m.combos and m.combos[id]
 end
@@ -571,7 +578,8 @@ local function set_button_kind(a, kind, id)
   elseif kind == 'builtin' then set_table(a, { kind = 'builtin', builtin = 'transport_play' })
   elseif kind == 'action' then set_table(a, { kind = 'action', command = 0 })
   elseif kind == 'modifier' then set_table(a, { kind = 'modifier', indicator = 'checkerboard' }); ensure_modifier(id) end
-  if kind ~= 'modifier' and id and model.modifiers then
+  -- a button that stops being a modifier loses its layer; external hold modifiers are never touched here
+  if kind ~= 'modifier' and id and model.modifiers and not is_external(id) then
     model.modifiers[id] = nil
     if view.layer == id then view.layer = 'normal' end
   end
@@ -651,9 +659,14 @@ local function draw_topbar()
   -- layer
   ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Layer:'); ImGui.SameLine(ctx)
   local litems = { { id = 'normal', name = 'Normal' } }
-  for _, mid in ipairs(modifier_ids()) do litems[#litems + 1] = { id = mid, name = M.CONTROL_BY_ID[mid].name .. ' layer' } end
+  for _, mid in ipairs(modifier_ids()) do litems[#litems + 1] = { id = mid, name = layer_label(mid) } end
   local lpick = combo_ids('##layer', litems, view.layer, 150)
   if lpick then view.layer = lpick; view.follow = false end
+  ImGui.SameLine(ctx)
+  if view.show_modifiers then push_col(ImGui.Col_Button, 0x4A6FA5FF); push_col(ImGui.Col_ButtonHovered, 0x5A80B8FF); push_col(ImGui.Col_ButtonActive, 0x3A5F95FF) end
+  if ImGui.Button(ctx, 'Modifiers...') then view.show_modifiers = not view.show_modifiers end
+  if view.show_modifiers then pop_col(3) end
+  ImGui.SetItemTooltip(ctx, 'Show / hide the modifier management section (external hold modifiers such as a foot switch)')
 
   -- row 2: runtime view + actions
   ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Fader buttons:'); ImGui.SameLine(ctx)
@@ -845,7 +858,7 @@ local function draw_centre()
   local function fn(id) return assignment_text(layer_assignment(id)) end
   local function tip(id)
     local c = M.CONTROL_BY_ID[id]
-    return c.name .. ' (CC ' .. c.cc .. ')\n' .. (view.layer == 'normal' and 'Normal: ' or (M.CONTROL_BY_ID[view.layer].name .. ' layer: ')) .. assignment_text(layer_assignment(id), true)
+    return c.name .. ' (CC ' .. c.cc .. ')\n' .. layer_label(view.layer) .. ': ' .. assignment_text(layer_assignment(id), true)
   end
   -- row 1
   panel_button('daw', bx(1), 22, W, H, 'DAW', fn('daw'), tip('daw'))
@@ -891,11 +904,14 @@ local function draw_centre()
   panel_button('play', bx(5), 158, W, H, 'Play', fn('play'), tip('play'))
   panel_button('record', bx(6), 158, W, H, 'Rec', fn('record'), tip('record'))
   -- layer / live line
-  local layer_name = view.layer == 'normal' and 'Normal layer' or (M.CONTROL_BY_ID[view.layer].name .. ' layer (modifier armed)')
+  local layer_name
+  if view.layer == 'normal' then layer_name = 'Normal layer'
+  elseif is_external(view.layer) then layer_name = layer_label(view.layer) .. ' layer (while held)'
+  else layer_name = layer_label(view.layer) .. ' (modifier armed)' end
   ImGui.DrawList_AddTextEx(G.dl, font, 10 * G.z, X(CX0), Y(240), view.layer == 'normal' and C.muted or C.armed, layer_name)
   if live and view.follow then
     local armed = {}
-    for _, mid in ipairs(modifier_ids()) do if live['mod_' .. mid] == 1 then armed[#armed + 1] = M.CONTROL_BY_ID[mid].name end end
+    for _, mid in ipairs(modifier_ids()) do if live['mod_' .. mid] == 1 then armed[#armed + 1] = M.modifier_name(model, mid) end end
     ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(CX0), Y(254), C.live,
       string.format('LIVE  layout %d  pad mode %d  armed: %s', (live.layout or 0) + 1, (live.pad or 0) + 1, #armed > 0 and table.concat(armed, ', ') or 'none'))
   end
@@ -1007,8 +1023,12 @@ local function inspect_button(id)
     edit_assignment('btn_' .. id, function() return ensure_button(id) end, true, id)
   else
     local mid = view.layer
-    ImGui.TextDisabled(ctx, M.CONTROL_BY_ID[mid].name .. ' layer: model.modifiers.' .. mid .. '.combos.' .. id)
-    if id == mid then
+    ImGui.TextDisabled(ctx, layer_label(mid) .. ': model.modifiers.' .. mid .. '.combos.' .. id)
+    if is_external(mid) then
+      local e = model.modifiers[mid].external
+      ImGui.TextDisabled(ctx, 'Fires while the external modifier is held (CC ' .. tostring(e.cc) .. ' on MIDI channel ' .. tostring((tonumber(e.channel) or M.EXTERNAL_CHANNEL) + 1) .. ')')
+    end
+    if id == mid and not is_external(mid) then
       ImGui.TextWrapped(ctx, 'This is the modifier button itself; it cannot have a combo in its own layer. Switch to the Normal layer to change what it does.')
       return
     end
@@ -1185,7 +1205,77 @@ local function inspect_layout()
   end_disabled()
 end
 
+-- ---- external hold modifiers (foot switch etc.) ------------------------------------------------
+local function unique_external_id()
+  local mods = model.modifiers or {}
+  local n = 1
+  while mods['ext' .. n] ~= nil do n = n + 1 end
+  return 'ext' .. n
+end
+
+local function add_external_modifier()
+  push_undo()
+  model.modifiers = model.modifiers or {}
+  local id = unique_external_id()
+  model.modifiers[id] = { external = { name = 'Foot switch', cc = 105, channel = M.EXTERNAL_CHANNEL, indicator = 'checkerboard' }, combos = {} }
+  after_edit('Added external hold modifier ' .. id)
+end
+
+local function remove_external_modifier(id)
+  if not is_external(id) then return end
+  push_undo()
+  model.modifiers[id] = nil
+  if view.layer == id then view.layer = 'normal' end
+  after_edit('Removed external hold modifier ' .. id)
+end
+
+local function draw_modifiers_panel()
+  ImGui.SeparatorText(ctx, 'Modifiers')
+  local ids = modifier_ids()
+  local btn_names, n_ext = {}, 0
+  for _, id in ipairs(ids) do
+    if is_external(id) then n_ext = n_ext + 1 else btn_names[#btn_names + 1] = M.modifier_name(model, id) end
+  end
+  ImGui.TextWrapped(ctx, string.format('%d of at most 2 modifiers in use. Modifier buttons: %s (set a button to "Modifier latch" in the Normal layer). External hold modifiers: %d.',
+    #ids, #btn_names > 0 and table.concat(btn_names, ', ') or 'none', n_ext))
+  ImGui.TextDisabled(ctx, 'An external modifier is a CC from another device injected on MIDIIN3; combos fire while it is held (127 = held, 0 = released).')
+  local to_remove
+  for _, id in ipairs(ids) do
+    if is_external(id) then
+      local m = model.modifiers[id]
+      local e = m.external
+      push_id('ext_' .. id)
+      ImGui.Separator(ctx)
+      ImGui.TextDisabled(ctx, 'model.modifiers.' .. id)
+      text_field('extname_' .. id, 'Name', e, 'name', -FLT_MIN)
+      ImGui.SetNextItemWidth(ctx, 90)
+      local cc = math.floor(tonumber(e.cc) or 0)
+      local rv, nv = ImGui.InputInt(ctx, 'CC', cc, 1, 10)
+      if rv and nv ~= cc then push_undo('extcc_' .. id); e.cc = math.max(0, math.min(127, nv)); after_edit() end
+      ImGui.SameLine(ctx)
+      ImGui.SetNextItemWidth(ctx, 90)
+      local chn = math.floor(tonumber(e.channel) or M.EXTERNAL_CHANNEL)
+      local rv2, nv2 = ImGui.InputInt(ctx, 'Channel', chn, 1, 1)
+      if rv2 and nv2 ~= chn then push_undo('extch_' .. id); e.channel = math.max(0, math.min(15, nv2)); after_edit() end
+      ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, string.format('(0-based = MIDI ch %d)', chn + 1))
+      local pick = combo_ids('Indicator', M.MODIFIER_INDICATORS, e.indicator or 'checkerboard', -FLT_MIN)
+      if pick then push_undo(); e.indicator = pick; after_edit() end
+      if ImGui.Button(ctx, 'Edit layer') then view.layer = id; view.follow = false; sel = { kind = nil } end
+      ImGui.SetItemTooltip(ctx, 'Switch the Layer combo to this modifier, then click a control on the panel to set its combo')
+      ImGui.SameLine(ctx)
+      if ImGui.Button(ctx, 'Remove') then to_remove = id end
+      pop_id()
+    end
+  end
+  if to_remove then remove_external_modifier(to_remove) end
+  ImGui.Separator(ctx)
+  if ImGui.Button(ctx, 'Add external hold modifier') then add_external_modifier() end
+  ImGui.SetItemTooltip(ctx, 'Adds model.modifiers.extN with CC 105 on channel 14 (0-based 13); edit the CC / channel to match the injecting unit')
+  ImGui.Spacing(ctx)
+end
+
 local function draw_inspector()
+  if view.show_modifiers then draw_modifiers_panel() end
   if sel.kind == 'button' then inspect_button(sel.id)
   elseif sel.kind == 'encoder' then inspect_encoder()
   elseif sel.kind == 'pad' then inspect_pad(sel.k)
@@ -1199,7 +1289,7 @@ local function draw_inspector()
     ImGui.SeparatorText(ctx, 'Inspector')
     ImGui.TextWrapped(ctx, 'Click a control on the panel to edit it: transport and bank buttons, the Back / DAW buttons, the encoder (ring = turn, centre = press), pads, faders, knobs, fader buttons and the side buttons next to the pads.')
     ImGui.Spacing(ctx)
-    ImGui.TextWrapped(ctx, 'The Layer combo switches between the normal assignments and what each modifier button gives the other buttons while armed. Ctrl+Z / Ctrl+Y undo and redo.')
+    ImGui.TextWrapped(ctx, 'The Layer combo switches between the normal assignments and what each modifier (a latched button, or an external hold modifier such as a foot switch) gives the other buttons. "Modifiers..." in the top bar manages external modifiers. Ctrl+Z / Ctrl+Y undo and redo.')
   end
   ImGui.Spacing(ctx); ImGui.Separator(ctx)
   ImGui.TextDisabled(ctx, string.format('%d undo steps  |  model: %s', #undo_stack, apply.MODEL_PATH))
@@ -1210,7 +1300,7 @@ end
 -- ================================================================================================
 local function follow_live()
   local nmodes = #cur_modes()
-  live = state.read({ bank = #banks(), mode = 5, knob = 4, pad = math.max(1, nmodes), layout = #layouts() })
+  live = state.read({ bank = #banks(), mode = 5, knob = 4, pad = math.max(1, nmodes), layout = #layouts(), modifiers = modifier_ids() })
   if not live then return end
   -- the unit's state is tracked from the presses it echoes; until the first press it is unknown
   if not live.synced then return end

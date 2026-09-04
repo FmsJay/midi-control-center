@@ -64,6 +64,21 @@ for _, cid in ipairs(CONTROL_ORDER) do
     end
 end
 
+-- external HOLD modifiers (another unit injects "CC on channel 14" into MIDIIN3: 127 held / 0 released)
+local EXTERNAL_IDS = {}
+for id, m in pairs(MODEL.modifiers or {}) do
+    if type(m) == "table" and type(m.external) == "table" then table.insert(EXTERNAL_IDS, id) end
+end
+table.sort(EXTERNAL_IDS)
+for _, id in ipairs(EXTERNAL_IDS) do
+    MODIFIER_PARAM[id] = NEXT_PARAM
+    table.insert(parameters, { index = NEXT_PARAM, id = "mod_" .. id, name = "Modifier (hold): " .. (MODEL.modifiers[id].external.name or id), value_count = 2, value_labels = { "up", "held" } })
+    NEXT_PARAM = NEXT_PARAM + 1
+end
+local ALL_MODIFIER_IDS = {}
+for _, cid in ipairs(CONTROL_ORDER) do if MODIFIER_PARAM[cid] then table.insert(ALL_MODIFIER_IDS, cid) end end
+for _, id in ipairs(EXTERNAL_IDS) do table.insert(ALL_MODIFIER_IDS, id) end
+
 -- Off mode: LEDs 1-4 mirror the keyboard's own ARP / Latch / Chord / Scale toggles. The firmware alternates the
 -- button's CC value between 127 and 0 on successive presses, which is exactly its local on/off state.
 local LOCAL_LED_PARAM = {}
@@ -201,7 +216,7 @@ add { id = "master", name = "Master volume", group = "global", feedback_enabled 
 -- which modifiers define a combo for a given control (base mapping is gated on all of them being off)
 local function modifiers_for(cid)
     local list = {}
-    for _, mid in ipairs(CONTROL_ORDER) do
+    for _, mid in ipairs(ALL_MODIFIER_IDS) do
         local m = MODEL.modifiers and MODEL.modifiers[mid]
         if MODIFIER_PARAM[mid] and m then
             if cid == "encoder_turn" then
@@ -252,6 +267,19 @@ for _, mid in ipairs(CONTROL_ORDER) do
                 end
             end
         end
+    end
+end
+
+-- external hold modifiers: the injected CC drives the parameter directly (127 -> held, 0 -> up); the pad indicator
+-- follows the same press/release (no latch, no drop mappings)
+for _, id in ipairs(EXTERNAL_IDS) do
+    local e = MODEL.modifiers[id].external
+    local ch = e.channel or 13
+    add { id = "modstate-" .. id, name = "Modifier (hold): " .. (e.name or id), group = "global", feedback_enabled = false,
+          source = cc_button(ch, e.cc), target = param(MODIFIER_PARAM[id]) }
+    if (e.indicator or "checkerboard") ~= "none" then
+        add { id = "modhold-echo-" .. id, name = "Hold modifier -> watcher", group = "global", feedback_enabled = false,
+              source = cc_range(ch, e.cc), target = send_to_port1("B0 68 [0gfe dcba]") }
     end
 end
 
@@ -329,8 +357,8 @@ for _, cid in ipairs(CONTROL_ORDER) do
 end
 emit_encoder(MODEL.encoder_turn, all_off(modifiers_for("encoder_turn")), "")
 
--- combos (active while the modifier layer is armed)
-for _, mid in ipairs(CONTROL_ORDER) do
+-- combos (active while the modifier layer is armed or the hold modifier is down)
+for _, mid in ipairs(ALL_MODIFIER_IDS) do
     local m = MODEL.modifiers and MODEL.modifiers[mid]
     if MODIFIER_PARAM[mid] and m then
         for _, cid in ipairs(CONTROL_ORDER) do
