@@ -907,6 +907,18 @@ function XQ.write_snapshot_file()
   status.text, status.col = string.format('snapshot: captured %s, %d bytes -> %s (embedded on the next Apply)', os.date('%H:%M:%S'), #xq.snapshot, XQ.SNAPSHOT_PATH), C.ok
 end
 
+-- send the stored (or last read) snapshot back to the keyboard right now, without an Apply
+function XQ.restore_snapshot()
+  local raw = (xq.snap_file and xq.snap_file.bytes == 255 and xq.snap_file.raw) or xq.snapshot
+  if not raw or #raw ~= 255 then status.text, status.col = 'No 255-byte snapshot to restore (read or capture one first)', C.err; return end
+  local mask = (model.exquis and model.exquis.slider_mode == 'zones') and 0x2E or 0x2A
+  if not XQ.send({ 0x00, mask }) then return end
+  local bytes = { 0x09 }
+  for b = 1, #raw do bytes[#bytes + 1] = raw:byte(b) end
+  XQ.send(bytes)
+  status.text, status.col = 'Snapshot sent to the keyboard (layout + MIDI settings restored)', C.ok
+end
+
 function XQ.clear_snapshot_file()
   local ok, err = os.remove(XQ.SNAPSHOT_PATH)
   xq.checked = -1
@@ -2134,6 +2146,11 @@ local function draw_exquis_keyboard_box()
   if ImGui.Button(ctx, 'Clear snapshot') then XQ.clear_snapshot_file() end
   end_disabled()
   ImGui.SetItemTooltip(ctx, 'Delete the snapshot file (Apply then writes a preset without a start-up layout)')
+  ImGui.SameLine(ctx)
+  begin_disabled(not ((xq.snap_file and xq.snap_file.bytes == 255) or (xq.snapshot and #xq.snapshot == 255)))
+  if ImGui.Button(ctx, 'Restore now') then XQ.restore_snapshot() end
+  end_disabled()
+  ImGui.SetItemTooltip(ctx, 'Send the stored snapshot to the keyboard immediately (e.g. after the Exquis app put it back to its own layout)')
   if xq.pending then ImGui.TextColored(ctx, C.live, 'waiting for the ' .. xq.pending .. ' reply...') end
   if xq.snap_file then
     ImGui.TextColored(ctx, C.ok, string.format('Snapshot file: %s (%d bytes)', xq.snap_file.comment ~= '' and xq.snap_file.comment or 'no comment', xq.snap_file.bytes))
