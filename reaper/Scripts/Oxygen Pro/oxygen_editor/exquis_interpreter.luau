@@ -16,10 +16,21 @@ local ENC = { 110, 111, 112, 113 }
 local ENC_PUSH = { 114, 115, 116, 117 }
 local SLIDER_LED = { 80, 81, 82, 83, 84, 85 }
 
-local P_SHIFT = 0
+local MODES = MODEL.modes or { { name = "Track", buttons = MODEL.buttons, encoders = MODEL.encoders, pushes = MODEL.pushes, slider = MODEL.slider, shift = MODEL.shift } }
+local SLIDER_NATIVE = (MODEL.slider_mode or "native") == "native"
+local DEV_MASK = SLIDER_NATIVE and 0x2A or 0x2E        -- 02 encoders + 08 up/down + 20 buttons (+ 04 slider when taken over)
+local P_SHIFT, P_MODE = 0, 1
+local mode_labels = {}
+for i, m in ipairs(MODES) do mode_labels[i] = m.name or ("Mode " .. i) end
 local parameters = {
     { index = P_SHIFT, id = "shift", name = "Shift (FCB1010 hold)", value_count = 2, value_labels = { "up", "held" } },
+    { index = P_MODE, id = "xmode", name = "Exquis mode", value_count = #MODES, value_labels = mode_labels },
 }
+local groups = {}
+for i = 1, #MODES do
+    table.insert(groups, { id = "xmode" .. (i - 1), name = "Exquis mode: " .. mode_labels[i], activation_condition = { kind = "Bank", parameter = P_MODE, bank_index = i - 1 } })
+end
+local CUR_GROUP = nil
 local SHIFT_UP   = { kind = "Modifier", modifiers = { { parameter = P_SHIFT, on = false } } }
 local SHIFT_DOWN = { kind = "Modifier", modifiers = { { parameter = P_SHIFT, on = true } } }
 
@@ -49,8 +60,8 @@ local function led_script(id, on, off)
         .. "return { address = " .. id .. ", messages = { { 0xF0, 0x00, 0x21, 0x7E, 0x7F, 0x04, " .. id .. ", r, g, b, 0x00, 0xF7 } } }"
 end
 local function led(id, target, on, off, condition)
-    add { id = "led-" .. id .. (condition == SHIFT_DOWN and "-shift" or ""), name = "LED " .. id, control_enabled = false,
-          activation_condition = condition,
+    add { id = (CUR_GROUP or "g") .. "-led-" .. id .. (condition == SHIFT_DOWN and "-shift" or ""), name = "LED " .. id, control_enabled = false,
+          group = CUR_GROUP, activation_condition = condition,
           source = { kind = "MidiScript", script_kind = "Lua", script = led_script(id, on, off or dim(on)) }, target = target }
 end
 local function paint(id, c, condition) led(id, { kind = "Dummy" }, c, c, condition) end
@@ -59,13 +70,13 @@ local function paint(id, c, condition) led(id, { kind = "Dummy" }, c, c, conditi
 -- the keyboard always comes up in that layout. Sent as raw sysex from the activation hook of the dev-mode mapping.
 local ON_ACTIVATE = nil
 if type(MODEL.snapshot) == "string" and #MODEL.snapshot > 0 then
-    ON_ACTIVATE = { send_midi_feedback = { { kind = "Raw", message = "F0 00 21 7E 7F 00 2E F7" }, { kind = "Raw", message = "F0 00 21 7E 7F 09 " .. MODEL.snapshot .. " F7" } } }
+    ON_ACTIVATE = { send_midi_feedback = { { kind = "Raw", message = string.format("F0 00 21 7E 7F 00 %02X F7", DEV_MASK) }, { kind = "Raw", message = "F0 00 21 7E 7F 09 " .. MODEL.snapshot .. " F7" } } }
 end
 
 -- Developer Mode on load (feedback-only mapping fires once when the unit activates); hand back on unload
 add { id = "devmode", name = "Exquis Developer Mode (encoders, slider, up/down, buttons)", control_enabled = false,
       source = { kind = "MidiScript", script_kind = "Lua",
-                 script = "return { address = 0, messages = { { 0xF0, 0x00, 0x21, 0x7E, 0x7F, 0x00, 0x2E, 0xF7 } } }" },
+                 script = "return { address = 0, messages = { { 0xF0, 0x00, 0x21, 0x7E, 0x7F, 0x00, " .. DEV_MASK .. ", 0xF7 } } }" },
       target = { kind = "Dummy" },
       on_activate = ON_ACTIVATE,
       on_deactivate = { send_midi_feedback = { { kind = "Raw", message = "F0 00 21 7E 7F 00 00 F7" } } } }
@@ -86,32 +97,41 @@ local function button_target(a)
         if a.builtin == "tap_tempo" then
             return { kind = "SendMidi", message = "B0 66 7F", destination = { kind = "InputDevice", device_id = PORT1_INPUT_DEVICE } }, PRESS, false
         end
+        if a.builtin == "mode_next" or a.builtin == "mode_prev" then
+            return param(P_MODE), { absolute_mode = "IncrementalButton", reverse = (a.builtin == "mode_prev") or nil, wrap = true, step_factor_interval = { 1, 1 } }, "mode"
+        end
     end
     return nil
 end
+-- state echo for the editor: mode presses go to the port-1 input as CC 90 (next) / CC 91 (prev)
+local function mode_echo(prefix, elem_id, a, condition)
+    add { id = prefix .. elem_id .. "-modeecho", name = "Exquis mode press -> state echo", feedback_enabled = false, group = CUR_GROUP,
+          activation_condition = condition, source = cc_button(CH, elem_id), glue = PRESS,
+          target = { kind = "SendMidi", message = (a.builtin == "mode_next") and "B0 5A 7F" or "B0 5B 7F", destination = { kind = "InputDevice", device_id = PORT1_INPUT_DEVICE } } }
+end
+local MODE_COLOUR = nil   -- set per mode while emitting
 local function emit_button(prefix, elem_id, a, condition)
     local tgt, glue, stateful = button_target(a)
     if not tgt then
         if a and a.colour then paint(elem_id, colour(a), condition) end
         return
     end
-    add { id = prefix .. elem_id, name = (a.name or a.kind) .. " " .. elem_id, feedback_enabled = false, activation_condition = condition,
-          source = cc_button(CH, elem_id), glue = glue, target = tgt }
-    if stateful then led(elem_id, tgt, colour(a, "green"), nil, condition)
+    add { id = (CUR_GROUP or "g") .. "-" .. prefix .. elem_id, name = (a.name or a.kind) .. " " .. elem_id, feedback_enabled = false, group = CUR_GROUP,
+          activation_condition = condition, source = cc_button(CH, elem_id), glue = glue, target = tgt }
+    if stateful == "mode" then
+        mode_echo((CUR_GROUP or "g") .. "-" .. prefix, elem_id, a, condition)
+        paint(elem_id, a.colour and colour(a) or (MODE_COLOUR or RGB.white), condition)
+    elseif stateful then led(elem_id, tgt, colour(a, "green"), nil, condition)
     elseif a.colour then paint(elem_id, colour(a), condition) end
-end
-for _, name in ipairs(BTN_ORDER) do
-    emit_button("btn-", BTN[name], MODEL.buttons and MODEL.buttons[name], SHIFT_UP)
-    emit_button("shift-btn-", BTN[name], MODEL.shift and MODEL.shift.buttons and MODEL.shift.buttons[name], SHIFT_DOWN)
 end
 
 -- ---- encoders -----------------------------------------------------------------------------------
 local function emit_encoder(prefix, i, a, condition)
     local src = encoder(ENC[i])
     local k = a and a.kind or "none"
-    local base = { feedback_enabled = false, activation_condition = condition }
+    local base = { feedback_enabled = false, activation_condition = condition, group = CUR_GROUP }
     local function m(id, name, fields)
-        local t = { id = prefix .. id, name = name }
+        local t = { id = (CUR_GROUP or "g") .. "-" .. prefix .. id, name = name }
         for kk, v in pairs(base) do t[kk] = v end
         for kk, v in pairs(fields) do t[kk] = v end
         add(t)
@@ -136,56 +156,41 @@ local function emit_encoder(prefix, i, a, condition)
     end
     if a and a.colour then paint(ENC[i], colour(a), condition) end
 end
-for i = 1, 4 do
-    emit_encoder("", i, MODEL.encoders and MODEL.encoders[i], SHIFT_UP)
-    emit_encoder("shift-", i, MODEL.shift and MODEL.shift.encoders and MODEL.shift.encoders[i], SHIFT_DOWN)
-end
-
 -- ---- encoder pushes (no shift layer) -----------------------------------------------------------------
 local function emit_push(i, a)
     local elem = ENC_PUSH[i]
     local k = a and a.kind or "none"
+    local G = (CUR_GROUP or "g") .. "-"
+    if k == "mode_next" or k == "mode_prev" then
+        add { id = G .. "push-" .. i, name = "Encoder push " .. i .. " = " .. k, feedback_enabled = false, group = CUR_GROUP,
+              source = cc_button(CH, elem), glue = { absolute_mode = "IncrementalButton", reverse = (k == "mode_prev") or nil, wrap = true, step_factor_interval = { 1, 1 } },
+              target = param(P_MODE) }
+        mode_echo(G .. "push" .. i .. "-", elem, { builtin = k }, nil)
+        paint(elem, a.colour and colour(a) or (MODE_COLOUR or RGB.white))
+        return
+    end
     local state_targets = {
         selected_mute = { kind = "TrackMuteState", track = SELECTED },
         selected_solo = { kind = "TrackSoloState", track = SELECTED },
         selected_arm  = { kind = "TrackArmState",  track = SELECTED },
     }
     if state_targets[k] then
-        add { id = "push-" .. i, name = "Encoder push " .. i .. ": " .. k, feedback_enabled = false,
+        add { id = G .. "push-" .. i, name = "Encoder push " .. i .. ": " .. k, feedback_enabled = false, group = CUR_GROUP,
               source = cc_button(CH, elem), glue = TOGGLE, target = state_targets[k] }
         local c = colour(a, "red")
         led(elem, state_targets[k], c, dim(c))
     elseif k == "tap_tempo" then
-        add { id = "push-" .. i, name = "Encoder push " .. i .. " = tap tempo (Oxygen watcher)", feedback_enabled = false,
+        add { id = G .. "push-" .. i, name = "Encoder push " .. i .. " = tap tempo (Oxygen watcher)", feedback_enabled = false, group = CUR_GROUP,
               source = cc_button(CH, elem), glue = PRESS,
               target = { kind = "SendMidi", message = "B0 66 7F", destination = { kind = "InputDevice", device_id = PORT1_INPUT_DEVICE } } }
         paint(elem, colour(a, "white"))
     elseif k == "action" then
-        add { id = "push-" .. i, name = "Encoder push " .. i .. " = action " .. tostring(a.command), feedback_enabled = false,
+        add { id = G .. "push-" .. i, name = "Encoder push " .. i .. " = action " .. tostring(a.command), feedback_enabled = false, group = CUR_GROUP,
               source = cc_button(CH, elem), glue = PRESS, target = action(a.command) }
         if a.colour then paint(elem, colour(a)) end
     elseif k == "transport" then
         local tgt = { kind = "TransportAction", action = a.action or "PlayStop" }
-        add { id = "push-" .. i, name = "Encoder push " .. i .. " = " .. tostring(a.action), feedback_enabled = false,
-              source = cc_button(CH, elem), glue = TOGGLE, target = tgt }
-        led(elem, tgt, colour(a, "green"))
-    elseif a and a.colour then
-        paint(elem, colour(a))
-    end
-end
-for i = 1, 4 do emit_push(i, MODEL.pushes and MODEL.pushes[i]) end
-
--- ---- slider zones (buttons on CC 80-85, measured) -------------------------------------------------------
-for k = 1, 6 do
-    local a = MODEL.slider and MODEL.slider[k]
-    local elem = SLIDER_LED[k]
-    if a and a.kind == "action" then
-        add { id = "slider-" .. k, name = "Slider zone " .. k .. " = action " .. tostring(a.command), feedback_enabled = false,
-              source = cc_button(CH, elem), glue = PRESS, target = action(a.command) }
-        paint(elem, colour(a, "orange"))
-    elseif a and a.kind == "transport" then
-        local tgt = { kind = "TransportAction", action = a.action or "PlayStop" }
-        add { id = "slider-" .. k, name = "Slider zone " .. k .. " = " .. tostring(a.action), feedback_enabled = false,
+        add { id = G .. "push-" .. i, name = "Encoder push " .. i .. " = " .. tostring(a.action), feedback_enabled = false, group = CUR_GROUP,
               source = cc_button(CH, elem), glue = TOGGLE, target = tgt }
         led(elem, tgt, colour(a, "green"))
     elseif a and a.colour then
@@ -193,4 +198,43 @@ for k = 1, 6 do
     end
 end
 
-return { parameters = parameters, mappings = mappings }
+-- ---- slider zones (buttons on CC 80-85, measured); only when the slider is taken over ---------------------
+local function emit_slider(MODE)
+    if SLIDER_NATIVE then return end
+    local G = (CUR_GROUP or "g") .. "-"
+    for k = 1, 6 do
+        local a = MODE.slider and MODE.slider[k]
+        local elem = SLIDER_LED[k]
+        if a and a.kind == "action" then
+            add { id = G .. "slider-" .. k, name = "Slider zone " .. k .. " = action " .. tostring(a.command), feedback_enabled = false, group = CUR_GROUP,
+                  source = cc_button(CH, elem), glue = PRESS, target = action(a.command) }
+            paint(elem, colour(a, "orange"))
+        elseif a and a.kind == "transport" then
+            local tgt = { kind = "TransportAction", action = a.action or "PlayStop" }
+            add { id = G .. "slider-" .. k, name = "Slider zone " .. k .. " = " .. tostring(a.action), feedback_enabled = false, group = CUR_GROUP,
+                  source = cc_button(CH, elem), glue = TOGGLE, target = tgt }
+            led(elem, tgt, colour(a, "green"))
+        elseif a and a.colour then
+            paint(elem, colour(a))
+        end
+    end
+end
+
+-- ---- every mode gets its own group (Bank condition on the mode parameter) ------------------------------------
+for mi, MODE in ipairs(MODES) do
+    CUR_GROUP = "xmode" .. (mi - 1)
+    MODE_COLOUR = RGB[MODE.colour or "white"] or RGB.white
+    for _, name in ipairs(BTN_ORDER) do
+        emit_button("btn-", BTN[name], MODE.buttons and MODE.buttons[name], SHIFT_UP)
+        emit_button("shift-btn-", BTN[name], MODE.shift and MODE.shift.buttons and MODE.shift.buttons[name], SHIFT_DOWN)
+    end
+    for i = 1, 4 do
+        emit_encoder("", i, MODE.encoders and MODE.encoders[i], SHIFT_UP)
+        emit_encoder("shift-", i, MODE.shift and MODE.shift.encoders and MODE.shift.encoders[i], SHIFT_DOWN)
+    end
+    for i = 1, 4 do emit_push(i, MODE.pushes and MODE.pushes[i]) end
+    emit_slider(MODE)
+end
+CUR_GROUP = nil
+
+return { parameters = parameters, groups = groups, mappings = mappings }

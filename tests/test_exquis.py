@@ -64,11 +64,20 @@ def main():
     assert gen.generate_exquis(model, L.table(date="test")) is None
     # validation
     bad = model_mod.copy(model)
-    bad["exquis"]["encoders"][2]["kind"] = "bogus"
-    bad["exquis"]["buttons"]["play"]["colour"] = "pink"
+    bad["exquis"]["modes"][1]["encoders"][2]["kind"] = "bogus"
+    bad["exquis"]["modes"][1]["buttons"]["play"]["colour"] = "pink"
     errs = to_py(model_mod.validate(bad))
     assert len(errs) == 2, errs
-    print("Exquis disabled path and validation OK")
+    # modes: the default has two, the mode switch button carries the mode colour, the native slider takes no mappings
+    m3 = model_mod.default(); m3["exquis"]["enabled"] = True
+    g3 = load_preset(L, gen.generate_exquis(m3, L.table(date="test")), "modes")
+    assert [g["id"] for g in g3["groups"]] == ["xmode0", "xmode1"]
+    assert not any("slider" in m["id"] for m in g3["mappings"]), "native slider must not be mapped"
+    assert any(m["id"] == "xmode1-btn-104" for m in g3["mappings"]), "mode 2 must have its own Clips mapping"
+    m3["exquis"]["slider_mode"] = "zones"
+    g4 = load_preset(L, gen.generate_exquis(m3, L.table(date="test")), "zones")
+    assert sum(1 for m in g4["mappings"] if "slider" in m["id"]) == 6, "zones mode maps the six slider zones of mode 1"
+    print("Exquis disabled path, validation and modes OK")
 
 
 if __name__ == "__main__":

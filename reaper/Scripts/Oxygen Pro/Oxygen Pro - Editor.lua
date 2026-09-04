@@ -83,6 +83,24 @@ local DEVICES = { { id = 'oxygen', name = 'Oxygen Pro 61' }, { id = 'exquis', na
 local EXQUIS_LAYERS = { { id = 'normal', name = 'Normal' }, { id = 'shift', name = 'Shift (FCB1010 held)' } }
 local EXQUIS_HINT = 'off = no Exquis preset is written; needs the Exquis unit from the first-time setup and firmware 2.1+'
 
+-- Exquis keyboard I/O: Developer-Mode sysex F0 00 21 7E 7F <cmd> ... F7 over the REAPER MIDI devices named "Exquis",
+-- the .xqilayout files of the Exquis app, and the start-up snapshot file generator.lua embeds on Apply
+local XQ = {}   -- one table for the constants and functions (the chunk is near Lua's 200-locals limit)
+XQ.MFR  = string.char(0x00, 0x21, 0x7E, 0x7F)
+XQ.HDR  = string.char(0xF0) .. XQ.MFR
+XQ.CMD  = { snapshot = 0x09, root = 0x06, scale = 0x07 }
+XQ.ROOTS  = { 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B' }
+XQ.SCALES = { 'Major', 'Natural Minor', 'Melodic Minor', 'Harmonic Minor', 'Dorian', 'Phrygian', 'Lydian', 'Mixolydian',
+                    'Locrian', 'Phrygian dominant', 'Major Pentatonic', 'Minor Pentatonic', 'Whole Tone', 'Chromatic' }
+XQ.ROOT_ITEMS, XQ.SCALE_ITEMS = {}, {}
+for i, n in ipairs(XQ.ROOTS)  do XQ.ROOT_ITEMS[i]  = { id = i - 1, name = n } end
+for i, n in ipairs(XQ.SCALES) do XQ.SCALE_ITEMS[i] = { id = i - 1, name = n } end
+XQ.ROWS = { 6, 5, 6, 5, 6, 5, 6, 5, 6, 5, 6 }   -- keys per file row, bottom row of the upright keyboard first
+XQ.LAYOUT_DIR = (os.getenv('USERPROFILE') or '') .. '/Documents/Intuitive Instruments/Exquis/Layouts'
+XQ.SNAPSHOT_PATH = DIR .. '/exquis_snapshot.txt'
+XQ.TIMEOUT = 3.0
+XQ.KEY_OFF = 0x2A2B31FF
+
 -- ================================================================================================
 -- 2. State
 -- ================================================================================================
@@ -108,6 +126,22 @@ local pending_dock = tonumber(reaper.GetExtState(EXT, 'dock'))
 if pending_dock == 0 then pending_dock = nil end
 local name_cache = {}
 local stk = { child = 0, combo = 0, col = 0, id = 0, disabled = 0 }   -- open Begin*/Push* for error recovery
+
+-- Exquis keyboard I/O: live device settings, never part of the model (no undo). One query at a time, polled from
+-- frame() each cycle: pending = 'snapshot' | 'root' | 'scale' | nil, queue = the queries still to send, done = callback.
+local xq = {
+  pending = nil, t0 = 0, last_seq = 0, queue = {}, done = nil,
+  snapshot = nil,          -- 255 raw bytes (string) of the last cmd 09 reply, or of the snapshot file at start-up
+  snapshot_src = nil,      -- 'keyboard' | 'file'
+  keys = nil,              -- 61 x { note = n, col = RGBA } decoded from the snapshot
+  root = nil, scale = nil, -- last values read from the device
+  ui_root = 0, ui_scale = 0,   -- the Root / Scale combos
+  layouts = nil,           -- parsed .xqilayout files (cached; "Rescan" reloads)
+  layout = nil,            -- the file whose notes equal the snapshot's, or nil
+  pick = nil,              -- file name chosen in the combo when nothing matched (display only)
+  snap_file = nil,         -- { comment, bytes } of the snapshot file, or nil when absent
+  out = nil, has_in = false, checked = -1, booted = false,
+}
 
 -- ================================================================================================
 -- 3. Model helpers (undo, validation, lookups)
@@ -691,6 +725,267 @@ local function set_button_kind(a, kind, id)
 end
 
 -- ================================================================================================
+-- 6b. Exquis keyboard I/O: layout files, snapshot file, Developer-Mode queries (non-blocking)
+-- ================================================================================================
+function XQ.note_name(n)
+  n = math.floor(tonumber(n) or 0)
+  return XQ.ROOTS[n % 12 + 1] .. tostring(n // 12 - 1)
+end
+
+-- .xqilayout colour "AARRGGBB" (or "0" = unlit) -> RGBA
+function XQ.file_colour(c)
+  local v = tonumber(c, 16) or 0
+  if (v & 0xFFFFFF) == 0 then return XQ.KEY_OFF end
+  return ((v & 0xFFFFFF) << 8) | 0xFF
+end
+
+-- snapshot record r, g, b (0-127 each) -> RGBA
+function XQ.snapshot_colour(r, g, b)
+  if r == 0 and g == 0 and b == 0 then return XQ.KEY_OFF end
+  local function s(v) return math.min(255, math.floor(v * 255 / 127 + 0.5)) end
+  return (s(r) << 24) | (s(g) << 16) | (s(b) << 8) | 0xFF
+end
+
+function XQ.output()
+  for i = 0, reaper.GetNumMIDIOutputs() - 1 do
+    local ok, n = reaper.GetMIDIOutputNameNoAlias(i, '')
+    if ok and n == 'Exquis' then return i end
+  end
+  return nil
+end
+function XQ.input_present()
+  for i = 0, reaper.GetNumMIDIInputs() - 1 do
+    local ok, n = reaper.GetMIDIInputNameNoAlias(i, '')
+    if ok and n == 'Exquis' then return true end
+  end
+  return false
+end
+
+-- sends F0 00 21 7E 7F <bytes...> F7; false (with a status message) when no Exquis output exists
+function XQ.send(bytes)
+  local out = XQ.output()
+  xq.out = out
+  if not out then
+    status.text, status.col = 'No MIDI output named "Exquis" (enable it in Preferences > MIDI Devices)', C.err
+    return false
+  end
+  local s = XQ.HDR .. string.char(table.unpack(bytes)) .. string.char(0xF7)
+  reaper.SendMIDIMessageToHardware(out, s, #s)
+  return true
+end
+
+-- ---- layout files ---------------------------------------------------------------------------------
+function XQ.scan_layouts()
+  local list, i = {}, 0
+  while true do
+    local fn = reaper.EnumerateFiles(XQ.LAYOUT_DIR, i)
+    if not fn then break end
+    if fn:lower():sub(-10) == '.xqilayout' then
+      local f = io.open(XQ.LAYOUT_DIR .. '/' .. fn, 'rb')
+      if f then
+        local s = f:read('*a'); f:close()
+        local notes, cols = {}, {}
+        for n, c in s:gmatch('noteNumber="(%d+)"%s+colour="(%x+)"') do
+          notes[#notes + 1] = math.floor(tonumber(n) or 0); cols[#cols + 1] = XQ.file_colour(c)
+        end
+        -- the file name is the identity: the name="..." attribute inside is often inherited from the layout a file
+        -- was duplicated from, so it is kept only as a secondary title
+        if #notes == 61 then
+          list[#list + 1] = { file = fn, name = (fn:gsub('%.[Xx][Qq][Ii][Ll][Aa][Yy][Oo][Uu][Tt]$', '')),
+                              title = s:match('<LAYOUT[^>]-name="([^"]*)"'), notes = notes, colours = cols }
+        end
+      end
+    end
+    i = i + 1
+  end
+  table.sort(list, function(a, b) return a.file:lower() < b.file:lower() end)
+  xq.layouts = list
+  return list
+end
+
+function XQ.layout_by_file(file)
+  for _, l in ipairs(xq.layouts or {}) do if l.file == file then return l end end
+  return nil
+end
+
+-- decode the 255 snapshot bytes (11 header bytes, then 61 x note r g b) into xq.keys, then find the file whose
+-- 61 note numbers equal the snapshot's in order
+function XQ.identify()
+  xq.keys, xq.layout = nil, nil
+  local snap = xq.snapshot
+  if not snap or #snap < 11 + 61 * 4 then return end
+  local keys = {}
+  for k = 1, 61 do
+    local o = 12 + 4 * (k - 1)
+    keys[k] = { note = snap:byte(o), col = XQ.snapshot_colour(snap:byte(o + 1), snap:byte(o + 2), snap:byte(o + 3)) }
+  end
+  xq.keys, xq.also = keys, {}
+  if not xq.layouts then XQ.scan_layouts() end
+  for _, l in ipairs(xq.layouts) do
+    local same = true
+    for k = 1, 61 do if l.notes[k] ~= keys[k].note then same = false; break end end
+    if same then
+      if xq.layout then xq.also[#xq.also + 1] = l.name    -- duplicates with the same 61 notes (file copies)
+      else xq.layout = l; xq.pick = nil end
+    end
+  end
+end
+
+-- ---- snapshot file (oxygen_editor/exquis_snapshot.txt: "# comment" line, then the bytes as hex) ----
+function XQ.read_snapshot_file()
+  local f = io.open(XQ.SNAPSHOT_PATH, 'rb')
+  if not f then return nil end
+  local s = f:read('*a'); f:close()
+  local bytes = {}
+  for line in s:gmatch('[^\r\n]+') do
+    if line:sub(1, 1) ~= '#' then for h in line:gmatch('%x%x') do bytes[#bytes + 1] = string.char(tonumber(h, 16)) end end
+  end
+  return { comment = s:match('^#%s*([^\r\n]*)') or '', bytes = #bytes, raw = table.concat(bytes) }
+end
+
+function XQ.write_snapshot_file()
+  if not xq.snapshot then status.text, status.col = 'No snapshot to write', C.err; return end
+  local hex = {}
+  for b = 1, #xq.snapshot do hex[#hex + 1] = string.format('%02X', xq.snapshot:byte(b)) end
+  local f, err = io.open(XQ.SNAPSHOT_PATH, 'w')
+  if not f then status.text, status.col = 'Cannot write ' .. XQ.SNAPSHOT_PATH .. ': ' .. tostring(err), C.err; return end
+  f:write('# Exquis snapshot captured ' .. os.date('%Y-%m-%d %H:%M') .. ' (' .. #xq.snapshot .. ' bytes)\n' .. table.concat(hex, ' ') .. '\n')
+  f:close()
+  xq.checked = -1
+  status.text, status.col = string.format('snapshot: captured %s, %d bytes -> %s (embedded on the next Apply)', os.date('%H:%M:%S'), #xq.snapshot, XQ.SNAPSHOT_PATH), C.ok
+end
+
+function XQ.clear_snapshot_file()
+  local ok, err = os.remove(XQ.SNAPSHOT_PATH)
+  xq.checked = -1
+  if ok then status.text, status.col = 'Snapshot file deleted; the Exquis keeps its own layout from the next Apply on', nil
+  else status.text, status.col = 'Cannot delete the snapshot file: ' .. tostring(err), C.err end
+end
+
+-- once a second: device presence and the snapshot file; at start-up the file (if any) seeds the key field
+function XQ.refresh()
+  local now = reaper.time_precise()
+  if now - xq.checked < 1.0 then return end
+  xq.checked = now
+  xq.out = XQ.output()
+  xq.has_in = XQ.input_present()
+  xq.snap_file = XQ.read_snapshot_file()
+  if not xq.booted then
+    xq.booted = true
+    if xq.snap_file and xq.snap_file.bytes == 255 then
+      xq.snapshot, xq.snapshot_src = xq.snap_file.raw, 'file'
+      XQ.identify()
+    end
+  end
+end
+
+-- ---- query state machine --------------------------------------------------------------------------
+function XQ.stop(msg, col)
+  xq.pending, xq.queue, xq.done = nil, {}, nil
+  if msg then status.text, status.col = msg, col end
+end
+
+-- send the next queued query; nothing left = run the completion callback
+function XQ.next()
+  local kind = table.remove(xq.queue, 1)
+  if not kind then
+    local done = xq.done
+    xq.pending, xq.done = nil, nil
+    if done then done() end
+    return
+  end
+  if not XQ.send({ XQ.CMD[kind] }) then XQ.stop(); return end
+  xq.pending, xq.t0 = kind, reaper.time_precise()
+  local seq = reaper.MIDI_GetRecentInputEvent(0)   -- only events newer than this one are replies
+  xq.last_seq = seq or 0
+end
+
+function XQ.start(kinds, done)
+  if xq.pending then status.text, status.col = 'Exquis: still waiting for the ' .. xq.pending .. ' reply', C.err; return end
+  if not XQ.send({ 0x00, 0x2E }) then return end   -- Developer Mode on (harmless to repeat)
+  if not XQ.input_present() then status.text, status.col = 'No MIDI input named "Exquis": the reply cannot arrive', C.err
+  else status.text, status.col = 'Exquis: querying...', C.live end
+  xq.queue = {}
+  for _, k in ipairs(kinds) do xq.queue[#xq.queue + 1] = k end
+  xq.done = done
+  XQ.next()
+end
+
+function XQ.handle(kind, body)
+  if kind == 'snapshot' then
+    xq.snapshot, xq.snapshot_src = body, 'keyboard'
+    XQ.identify()
+  elseif kind == 'root' then
+    local v = body:byte(1)
+    if v and v <= 11 then xq.root, xq.ui_root = v, v end
+  elseif kind == 'scale' then
+    local v = body:byte(1)
+    if v and v <= #XQ.SCALES - 1 then xq.scale, xq.ui_scale = v, v end
+  end
+end
+
+-- called every frame: looks for the pending reply among the new input events (newest first), or times out
+function XQ.poll()
+  if not xq.pending then return end
+  local want = XQ.MFR .. string.char(XQ.CMD[xq.pending])
+  local newest, got
+  for i = 0, 255 do
+    local seq, buf = reaper.MIDI_GetRecentInputEvent(i)
+    if not seq or seq == 0 or seq <= xq.last_seq then break end
+    if newest == nil then newest = seq end
+    if not got and type(buf) == 'string' and #buf >= 7 and buf:byte(1) == 0xF0 and buf:sub(2, 6) == want then
+      got = buf:sub(7)
+      if got:byte(-1) == 0xF7 then got = got:sub(1, -2) end
+    end
+  end
+  if newest then xq.last_seq = newest end
+  if got then
+    local kind = xq.pending
+    XQ.handle(kind, got)
+    XQ.next()
+  elseif reaper.time_precise() - xq.t0 > XQ.TIMEOUT then
+    XQ.stop('Exquis: no ' .. xq.pending .. ' reply within 3 s (input "Exquis" enabled? firmware with Developer Mode?)', C.err)
+  end
+end
+
+-- ---- user actions ---------------------------------------------------------------------------------
+function XQ.read_from_keyboard()
+  XQ.start({ 'snapshot', 'root', 'scale' }, function()
+    status.text, status.col = string.format('Exquis read: layout %s, root %s, scale %s',
+      xq.layout and xq.layout.name or 'unknown', XQ.ROOTS[(xq.root or 0) + 1], XQ.SCALES[(xq.scale or 0) + 1]), C.ok
+  end)
+end
+function XQ.capture_snapshot()
+  XQ.start({ 'snapshot' }, XQ.write_snapshot_file)
+end
+function XQ.send_root_scale()
+  if xq.pending then status.text, status.col = 'Exquis: wait for the pending query first', C.err; return end
+  if XQ.send({ 0x00, 0x2E }) and XQ.send({ 0x06, xq.ui_root }) and XQ.send({ 0x07, xq.ui_scale }) then
+    xq.root, xq.scale = xq.ui_root, xq.ui_scale
+    status.text, status.col = 'Sent to the Exquis: root ' .. XQ.ROOTS[xq.ui_root + 1] .. ', scale ' .. XQ.SCALES[xq.ui_scale + 1], C.ok
+  end
+end
+
+-- what the key field shows: the snapshot's own keys, else the file picked in the combo, else nothing
+function XQ.display()
+  if xq.keys then
+    local l = xq.layout
+    local name = l and l.name or 'unknown layout'
+    local note = l and (xq.snapshot_src == 'file' and 'from the snapshot file' or 'confirmed by the keyboard')
+                   or 'no layout file has these notes'
+    if l and xq.also and #xq.also > 0 then note = note .. '; same notes in: ' .. table.concat(xq.also, ', ') end
+    return xq.keys, 'Layout: ' .. name, note, xq.snapshot_src == 'file' and C.muted or (l and C.ok or C.err)
+  end
+  local l = xq.pick and XQ.layout_by_file(xq.pick)
+  if l then
+    local keys = {}
+    for k = 1, 61 do keys[k] = { note = l.notes[k], col = l.colours[k] } end
+    return keys, 'Layout: ' .. l.name, 'file only, not confirmed by the keyboard', C.armed
+  end
+  return nil, 'Layout: unknown / not read yet', 'press "Read from keyboard" in the inspector', C.muted
+end
+
+-- ================================================================================================
 -- 7. Top bar
 -- ================================================================================================
 local function do_apply()
@@ -1146,7 +1441,7 @@ local function draw_panel()
 end
 
 -- ---- Exquis panel ------------------------------------------------------------------------------------
-local EXQ_W, EXQ_H = 660, 560
+local EXQ_W, EXQ_H = 660, 620
 
 local function xsel(kind, id) return sel.dev == 'exquis' and sel.kind == kind and sel.id == id end
 local function xselect(kind, id) sel = { dev = 'exquis', kind = kind, id = id } end
@@ -1243,22 +1538,41 @@ local function draw_exquis_panel()
     end
   end
 
-  -- pads: hexagon grid placeholder (11 columns of 6 / 5 = 61 keys); native MPE, not remapped
+  -- layout on keyboard: the 61 keys as played (keyboard on its side, encoders to the player's left), coloured and
+  -- named from the snapshot read from the device (or a layout file); native MPE, not remapped
   local hx, hy, hw, hh = 20, 320, EXQ_W - 40, EXQ_H - 320 - 24
   rect(hx, hy, hw, hh, 0x17181CFF, 8, C.line)
-  label(hx, hy + 6, hw, nil, '61 keys - MPE, not remapped (pads stay native)', C.muted, 10)
-  local hr = 16
-  local colw, rowh = hr * 1.5, hr * 1.7320508
-  local gx0 = hx + (hw - (10 * colw + 2 * hr)) / 2 + hr
-  local gy0 = hy + 34 + hr
-  for c = 0, 10 do
-    local odd = c % 2 == 1
-    for rr = 0, (odd and 4 or 5) do
-      local cx, cy = gx0 + c * colw, gy0 + rr * rowh + (odd and rowh / 2 or 0)
-      ImGui.DrawList_AddCircleFilled(G.dl, X(cx), Y(cy), (hr - 1.5) * G.z, C.btn, 6)
-      ImGui.DrawList_AddCircle(G.dl, X(cx), Y(cy), (hr - 1.5) * G.z, C.line, 6, 1)
+  local keys, head, note, hcol = XQ.display()
+  ImGui.DrawList_AddTextEx(G.dl, font, 9 * G.z, X(hx + 10), Y(hy + 6), C.muted, 'Layout on keyboard  (61 keys, MPE, not remapped)')
+  ImGui.DrawList_AddTextEx(G.dl, font, 11 * G.z, X(hx + 10), Y(hy + 20), C.ink, head)
+  ImGui.DrawList_AddTextEx(G.dl, font, 8 * G.z, X(hx + 10), Y(hy + 36), hcol, note)
+  if xq.pending then ImGui.DrawList_AddTextEx(G.dl, font, 8 * G.z, X(hx + hw - 150), Y(hy + 6), C.live, 'reading ' .. xq.pending .. '...') end
+  local hr = 19                                    -- key radius; flat-top hexagons in staggered columns
+  local dx, dy = hr * 1.5, hr * 1.7320508
+  local gx0 = hx + (hw - (10 * dx + 2 * hr)) / 2 + hr   -- player column 1 (left)
+  local gy0 = hy + hh - 10 - hr                     -- key 1 of a 6-key column (bottom)
+  local idx = 0
+  for row = 1, 11 do
+    local count = XQ.ROWS[row]
+    local p = 12 - row                              -- file row -> player column (1 = left, 11 = right)
+    for k = 1, count do
+      idx = idx + 1
+      local key = keys and keys[idx]
+      local cx = gx0 + (p - 1) * dx
+      local cy = gy0 - (k - 1 + (count == 5 and 0.5 or 0)) * dy
+      local fill = key and key.col or C.btn
+      local _, hovered = hit('xkey' .. idx, cx - hr, cy - hr, 2 * hr, 2 * hr)
+      ImGui.DrawList_AddCircleFilled(G.dl, X(cx), Y(cy), (hr - 1.5) * G.z, fill, 6)
+      ImGui.DrawList_AddCircle(G.dl, X(cx), Y(cy), (hr - 1.5) * G.z, hovered and C.white or C.line, 6, 1)
+      if key then
+        label(cx - hr, cy - 6, 2 * hr, 12, XQ.note_name(key.note), ink_for(fill), 8)
+        if hovered then
+          ImGui.SetTooltip(ctx, string.format('Column %d, key %d: %s (note %d)  #%06X', p, k, XQ.note_name(key.note), key.note, fill >> 8))
+        end
+      end
     end
   end
+  ImGui.DrawList_AddTextEx(G.dl, font, 8 * G.z, X(hx + hw - 150), Y(hy + hh - 14), C.muted, 'encoders <- this side')
 
   ImGui.SetCursorScreenPos(ctx, G.ox, G.oy)
   ImGui.Dummy(ctx, EXQ_W * G.z, EXQ_H * G.z)
@@ -1680,8 +1994,73 @@ local function inspect_exquis_slider(k)
   end, M.EXQUIS_SLIDER_KINDS)
 end
 
+-- live keyboard box: device queries, start-up snapshot file, root / scale (device settings, not the model)
+local function draw_exquis_keyboard_box()
+  push_id('xqkb')
+  ImGui.SeparatorText(ctx, 'Keyboard  (live Exquis settings, not part of the model)')
+  if not xq.out then ImGui.TextColored(ctx, C.err, 'MIDI output "Exquis" not found: enable it in Preferences > MIDI Devices')
+  elseif not xq.has_in then ImGui.TextColored(ctx, C.err, 'MIDI input "Exquis" not found: replies cannot arrive') end
+  if ImGui.Button(ctx, 'Read from keyboard') then XQ.read_from_keyboard() end
+  ImGui.SetItemTooltip(ctx, 'Query the current layout snapshot (cmd 09), root note (06) and scale (07)')
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, 'Capture snapshot for start-up') then XQ.capture_snapshot() end
+  ImGui.SetItemTooltip(ctx, 'Query the snapshot and write ' .. XQ.SNAPSHOT_PATH .. '\nApply embeds it, and the ReaLearn unit restores this layout each time it loads')
+  ImGui.SameLine(ctx)
+  begin_disabled(xq.snap_file == nil)
+  if ImGui.Button(ctx, 'Clear snapshot') then XQ.clear_snapshot_file() end
+  end_disabled()
+  ImGui.SetItemTooltip(ctx, 'Delete the snapshot file (Apply then writes a preset without a start-up layout)')
+  if xq.pending then ImGui.TextColored(ctx, C.live, 'waiting for the ' .. xq.pending .. ' reply...') end
+  if xq.snap_file then
+    ImGui.TextColored(ctx, C.ok, string.format('Snapshot file: %s (%d bytes)', xq.snap_file.comment ~= '' and xq.snap_file.comment or 'no comment', xq.snap_file.bytes))
+  else
+    ImGui.TextDisabled(ctx, 'Snapshot file: none (no start-up layout is embedded on Apply)')
+  end
+
+  -- layout identification
+  local _, head, note = XQ.display()
+  ImGui.Text(ctx, head); ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, '(' .. note .. ')')
+  if ImGui.SmallButton(ctx, 'Rescan') then
+    local n = #XQ.scan_layouts()
+    XQ.identify()
+    status.text, status.col = string.format('%d layout file(s) in %s', n, XQ.LAYOUT_DIR), nil
+  end
+  ImGui.SetItemTooltip(ctx, 'Reload the .xqilayout files from ' .. XQ.LAYOUT_DIR)
+  ImGui.SameLine(ctx)
+  if not xq.layouts then XQ.scan_layouts() end
+  local items = { { id = '', name = xq.keys and '(keyboard snapshot)' or '(none)' } }
+  for _, l in ipairs(xq.layouts) do
+    items[#items + 1] = { id = l.file, name = l.name .. ((l.title and l.title ~= l.name) and ('  (' .. l.title .. ')') or '') }
+  end
+  begin_disabled(xq.keys ~= nil)
+  local pick = combo_ids('Show file##xqpick', items, xq.pick or '', -FLT_MIN)
+  if pick then xq.pick = pick ~= '' and pick or nil end
+  end_disabled()
+  if xq.keys then ImGui.TextDisabled(ctx, 'The key field shows the snapshot read from the keyboard; a file can only be displayed before a snapshot is read.')
+  else ImGui.TextDisabled(ctx, 'Nothing read from the keyboard yet: pick a file to display its notes and colours.') end
+
+  -- root / scale
+  ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Root'); ImGui.SameLine(ctx)
+  local rp = combo_ids('##xqroot', XQ.ROOT_ITEMS, xq.ui_root, 70)
+  if rp then xq.ui_root = rp end
+  ImGui.SameLine(ctx); ImGui.Text(ctx, 'Scale'); ImGui.SameLine(ctx)
+  local sp = combo_ids('##xqscale', XQ.SCALE_ITEMS, xq.ui_scale, 150)
+  if sp then xq.ui_scale = sp end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, 'Send to keyboard') then XQ.send_root_scale() end
+  ImGui.SetItemTooltip(ctx, 'Send 06 <root> and 07 <scale> to the Exquis (Developer Mode)')
+  if xq.root then
+    ImGui.TextDisabled(ctx, string.format('Device: root %s, scale %s', XQ.ROOTS[xq.root + 1], XQ.SCALES[(xq.scale or 0) + 1]))
+  else
+    ImGui.TextDisabled(ctx, 'Device root / scale not read yet')
+  end
+  pop_id()
+  ImGui.Spacing(ctx)
+end
+
 local function draw_exquis_inspector()
   local layer = view.xlayer
+  draw_exquis_keyboard_box()
   if sel.dev == 'exquis' and sel.kind == 'button' then inspect_exquis_button(sel.id, layer)
   elseif sel.dev == 'exquis' and sel.kind == 'encoder' then inspect_exquis_encoder(sel.id, layer)
   elseif sel.dev == 'exquis' and sel.kind == 'push' then inspect_exquis_push(sel.id)
@@ -1740,6 +2119,8 @@ end
 
 local function frame()
   picker_poll()
+  XQ.refresh()
+  XQ.poll()
   if not ImGui.IsAnyItemActive(ctx) then
     if ImGui.IsKeyChordPressed(ctx, ImGui.Mod_Ctrl | ImGui.Key_Z) then undo() end
     if ImGui.IsKeyChordPressed(ctx, ImGui.Mod_Ctrl | ImGui.Key_Y) then redo() end

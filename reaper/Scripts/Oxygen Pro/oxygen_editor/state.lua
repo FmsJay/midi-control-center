@@ -11,8 +11,8 @@
 -- The state is unknown until the first echo arrives (`synced` = false); the editor shows it as such.
 
 local S = {}
-local st = { bank = 0, mode = 0, knob = 0, pad = 0, layout = 0, mod = false, synced = false, last_event = nil }
-local counts = { bank = 4, pad = 5, layout = 2 }
+local st = { bank = 0, mode = 0, knob = 0, pad = 0, layout = 0, mod = false, synced = false, last_event = nil, xmode = 0 }
+local counts = { bank = 4, pad = 5, layout = 2, xmode = 1 }
 local last_seq = nil
 
 local MODE_CC = { [0x39] = 0, [0x3A] = 1, [0x3B] = 2, [0x3C] = 3, [0x3D] = 4 }
@@ -31,6 +31,8 @@ local function handle(cc, val)
     elseif cc == 0x6C and val > 0 then st.pad = (st.pad + 1) % counts.pad
     elseif cc == 0x71 and val > 0 then st.layout = (st.layout + 1) % counts.layout
     elseif cc == 0x68 then st.mod = val > 0
+    elseif cc == 0x5A and val > 0 then st.xmode = (st.xmode + 1) % math.max(1, counts.xmode)
+    elseif cc == 0x5B and val > 0 then st.xmode = (st.xmode - 1) % math.max(1, counts.xmode)
     else return false end
     st.synced = true
     st.last_event = reaper.time_precise()
@@ -61,14 +63,14 @@ function S.read(c)
     S.set_counts(c)
     S.poll()
     local out = { bank = st.bank, mode = st.mode, knob = st.knob, pad = st.pad, layout = st.layout,
-                  mod_back = st.mod and 1 or 0, synced = st.synced }
+                  mod_back = st.mod and 1 or 0, synced = st.synced, xmode = st.xmode }
     for _, id in ipairs((c and c.modifiers) or {}) do out["mod_" .. id] = st.mod and 1 or 0 end
     return out
 end
 
 -- let the editor assume a state (e.g. after Apply, ReaLearn parameters restart at 0)
 function S.reset()
-    st.bank, st.mode, st.knob, st.pad, st.layout, st.mod, st.synced = 0, 0, 0, 0, 0, false, false
+    st.bank, st.mode, st.knob, st.pad, st.layout, st.mod, st.synced, st.xmode = 0, 0, 0, 0, 0, false, false, 0
 end
 
 function S.available() return true end

@@ -88,184 +88,301 @@ local MODEL = {
         kind = "browse_tracks",
     },
     exquis = {
-        buttons = {
-            clips = {
-                colour = "white",
-                command = 40157,
-                kind = "action",
-            },
-            down = {
-                colour = "azure",
-                command = 40286,
-                kind = "action",
-            },
-            loop = {
-                builtin = "transport_loop",
-                colour = "yellow",
-                kind = "builtin",
-            },
-            play = {
-                builtin = "transport_play",
-                colour = "green",
-                kind = "builtin",
-            },
-            record = {
-                builtin = "transport_record",
-                colour = "red",
-                kind = "builtin",
-            },
-            redo = {
-                colour = "violet",
-                command = 40030,
-                kind = "action",
-            },
-            undo = {
-                colour = "violet",
-                command = 40029,
-                kind = "action",
-            },
-            up = {
-                colour = "azure",
-                command = 40285,
-                kind = "action",
-            },
-        },
         enabled = false,
-        encoders = {
+        modes = {
             {
-                colour = "green",
-                kind = "selected_volume",
-            },
-            {
-                colour = "azure",
-                kind = "selected_pan",
-            },
-            {
+                buttons = {
+                    clips = {
+                        builtin = "mode_next",
+                        kind = "builtin",
+                    },
+                    down = {
+                        colour = "azure",
+                        command = 40286,
+                        kind = "action",
+                    },
+                    loop = {
+                        builtin = "transport_loop",
+                        colour = "yellow",
+                        kind = "builtin",
+                    },
+                    play = {
+                        builtin = "transport_play",
+                        colour = "green",
+                        kind = "builtin",
+                    },
+                    record = {
+                        builtin = "transport_record",
+                        colour = "red",
+                        kind = "builtin",
+                    },
+                    redo = {
+                        colour = "violet",
+                        command = 40030,
+                        kind = "action",
+                    },
+                    undo = {
+                        colour = "violet",
+                        command = 40029,
+                        kind = "action",
+                    },
+                    up = {
+                        colour = "azure",
+                        command = 40285,
+                        kind = "action",
+                    },
+                },
                 colour = "white",
-                kind = "browse_tracks",
+                encoders = {
+                    {
+                        colour = "green",
+                        kind = "selected_volume",
+                    },
+                    {
+                        colour = "azure",
+                        kind = "selected_pan",
+                    },
+                    {
+                        colour = "white",
+                        kind = "browse_tracks",
+                    },
+                    {
+                        colour = "orange",
+                        kind = "tempo",
+                    },
+                },
+                name = "Track",
+                pushes = {
+                    {
+                        colour = "red",
+                        kind = "selected_mute",
+                    },
+                    {
+                        colour = "yellow",
+                        kind = "selected_solo",
+                    },
+                    {
+                        colour = "red",
+                        kind = "selected_arm",
+                    },
+                    {
+                        colour = "white",
+                        kind = "tap_tempo",
+                    },
+                },
+                shift = {
+                    buttons = {
+                        clips = {
+                            colour = "green",
+                            command = 40026,
+                            kind = "action",
+                        },
+                        down = {
+                            colour = "cyan",
+                            command = 1011,
+                            kind = "action",
+                        },
+                        loop = {
+                            colour = "cyan",
+                            command = 40078,
+                            kind = "action",
+                        },
+                        play = {
+                            colour = "white",
+                            command = 40157,
+                            kind = "action",
+                        },
+                        record = {
+                            colour = "magenta",
+                            command = 40364,
+                            kind = "action",
+                        },
+                        redo = {
+                            colour = "orange",
+                            command = 40173,
+                            kind = "action",
+                        },
+                        undo = {
+                            colour = "orange",
+                            command = 40172,
+                            kind = "action",
+                        },
+                        up = {
+                            colour = "cyan",
+                            command = 1012,
+                            kind = "action",
+                        },
+                    },
+                    encoders = {
+                        {
+                            colour = "red",
+                            kind = "master_volume",
+                        },
+                        {
+                            colour = "yellow",
+                            index = 0,
+                            kind = "selected_send",
+                        },
+                        {
+                            colour = "cyan",
+                            kind = "zoom",
+                        },
+                        {
+                            colour = "orange",
+                            dim = true,
+                            kind = "none",
+                        },
+                    },
+                },
+                slider = {
+                    {
+                        colour = "orange",
+                        command = 40161,
+                        kind = "action",
+                    },
+                    {
+                        colour = "orange",
+                        command = 40162,
+                        kind = "action",
+                    },
+                    {
+                        colour = "orange",
+                        command = 40163,
+                        kind = "action",
+                    },
+                    {
+                        colour = "orange",
+                        command = 40164,
+                        kind = "action",
+                    },
+                    {
+                        colour = "orange",
+                        command = 40165,
+                        kind = "action",
+                    },
+                    {
+                        colour = "orange",
+                        command = 40166,
+                        kind = "action",
+                    },
+                },
             },
             {
-                colour = "orange",
-                kind = "tempo",
+                buttons = {
+                    clips = {
+                        builtin = "mode_next",
+                        kind = "builtin",
+                    },
+                    down = {
+                        colour = "azure",
+                        command = 40286,
+                        kind = "action",
+                    },
+                    loop = {
+                        builtin = "transport_loop",
+                        colour = "yellow",
+                        kind = "builtin",
+                    },
+                    play = {
+                        builtin = "transport_play",
+                        colour = "green",
+                        kind = "builtin",
+                    },
+                    record = {
+                        builtin = "transport_record",
+                        colour = "red",
+                        kind = "builtin",
+                    },
+                    redo = {
+                        colour = "violet",
+                        command = 40030,
+                        kind = "action",
+                    },
+                    undo = {
+                        colour = "violet",
+                        command = 40029,
+                        kind = "action",
+                    },
+                    up = {
+                        colour = "azure",
+                        command = 40285,
+                        kind = "action",
+                    },
+                },
+                colour = "cyan",
+                encoders = {
+                    {
+                        colour = "cyan",
+                        index = 0,
+                        kind = "fx_param",
+                    },
+                    {
+                        colour = "cyan",
+                        index = 1,
+                        kind = "fx_param",
+                    },
+                    {
+                        colour = "cyan",
+                        index = 2,
+                        kind = "fx_param",
+                    },
+                    {
+                        colour = "cyan",
+                        index = 3,
+                        kind = "fx_param",
+                    },
+                },
+                name = "Device",
+                pushes = {
+                    {
+                        colour = "red",
+                        kind = "selected_mute",
+                    },
+                    {
+                        colour = "yellow",
+                        kind = "selected_solo",
+                    },
+                    {
+                        colour = "red",
+                        kind = "selected_arm",
+                    },
+                    {
+                        colour = "white",
+                        kind = "tap_tempo",
+                    },
+                },
+                shift = {
+                    buttons = {},
+                    encoders = {
+                        {
+                            colour = "azure",
+                            index = 4,
+                            kind = "fx_param",
+                        },
+                        {
+                            colour = "azure",
+                            index = 5,
+                            kind = "fx_param",
+                        },
+                        {
+                            colour = "azure",
+                            index = 6,
+                            kind = "fx_param",
+                        },
+                        {
+                            colour = "azure",
+                            index = 7,
+                            kind = "fx_param",
+                        },
+                    },
+                },
+                slider = {},
             },
         },
         port1_input_device = 14,
-        pushes = {
-            {
-                colour = "red",
-                kind = "selected_mute",
-            },
-            {
-                colour = "yellow",
-                kind = "selected_solo",
-            },
-            {
-                colour = "red",
-                kind = "selected_arm",
-            },
-            {
-                colour = "white",
-                kind = "tap_tempo",
-            },
-        },
-        shift = {
-            buttons = {
-                clips = {
-                    colour = "green",
-                    command = 40026,
-                    kind = "action",
-                },
-                down = {
-                    colour = "cyan",
-                    command = 1011,
-                    kind = "action",
-                },
-                loop = {
-                    colour = "cyan",
-                    command = 40078,
-                    kind = "action",
-                },
-                play = {
-                    colour = "white",
-                    command = 40157,
-                    kind = "action",
-                },
-                record = {
-                    colour = "magenta",
-                    command = 40364,
-                    kind = "action",
-                },
-                redo = {
-                    colour = "orange",
-                    command = 40173,
-                    kind = "action",
-                },
-                undo = {
-                    colour = "orange",
-                    command = 40172,
-                    kind = "action",
-                },
-                up = {
-                    colour = "cyan",
-                    command = 1012,
-                    kind = "action",
-                },
-            },
-            encoders = {
-                {
-                    colour = "red",
-                    kind = "master_volume",
-                },
-                {
-                    colour = "yellow",
-                    index = 0,
-                    kind = "selected_send",
-                },
-                {
-                    colour = "cyan",
-                    kind = "zoom",
-                },
-                {
-                    colour = "orange",
-                    dim = true,
-                    kind = "none",
-                },
-            },
-        },
         shift_cc = 105,
         shift_channel = 13,
-        slider = {
-            {
-                colour = "orange",
-                command = 40161,
-                kind = "action",
-            },
-            {
-                colour = "orange",
-                command = 40162,
-                kind = "action",
-            },
-            {
-                colour = "orange",
-                command = 40163,
-                kind = "action",
-            },
-            {
-                colour = "orange",
-                command = 40164,
-                kind = "action",
-            },
-            {
-                colour = "orange",
-                command = 40165,
-                kind = "action",
-            },
-            {
-                colour = "orange",
-                command = 40166,
-                kind = "action",
-            },
-        },
+        slider_mode = "native",
     },
     layouts = {
         {

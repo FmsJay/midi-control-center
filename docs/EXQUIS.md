@@ -53,6 +53,15 @@ is not supported here.
 
 ## This integration
 
+The Exquis has **modes**, like the keyboard's pad modes: each mode is a full set of button, encoder, push and slider
+assignments plus its shift layer. A button or encoder push assigned "Next Exquis mode" steps through them on the
+device (its LED shows the mode's colour), the editor follows along, and "Mode settings" in the editor names and colours
+them. The **slider** stays the keyboard's own arpeggiator-rate slider by default (`slider_mode = "native"`); switch it
+to "zones" to get six REAPER buttons per mode instead.
+
+Two modes ship: **Track** (below) and **Device**, where the four encoders are the focused FX's parameters 1-4 (5-8 with
+the foot switch) and everything else is as in Track. Clips is the mode-switch button in both.
+
 `realearn/presets/main/exquis/main.preset.luau`, a ReaLearn unit with input and output = Exquis (enable the
 device as input, control and output in REAPER). On load it sends the mask-2E Developer Mode command and paints
 the LEDs; when the unit unloads it hands the zones back (`00 00`). If the buttons ever stay dead (REAPER closed
@@ -63,7 +72,6 @@ hard), run the action `Exquis - Developer mode off` or power-cycle the Exquis.
 | Play/Stop | play / stop, green when playing | insert marker |
 | Record | record, red when armed | metronome on/off |
 | Loop | repeat, yellow when on | show / hide mixer |
-| Clips | insert marker (white) | save project |
 | Undo / Redo | undo / redo (violet) | previous / next marker |
 | Down / Up | previous / next track (azure) | zoom out / in |
 | Encoder 1 | selected track volume (green) | master volume (red) |
@@ -72,7 +80,8 @@ hard), run the action `Exquis - Developer mode off` or power-cycle the Exquis.
 | Encoder 4 | project tempo (orange) | - |
 | Encoder pushes 1-3 | mute / solo / arm the selected track, LED shows the state | same |
 | Encoder push 4 | tap tempo (through the Oxygen watcher) | same |
-| Slider zones 1-6 | go to marker 1-6 (orange) | same |
+| Clips | next Exquis mode (LED = mode colour) | save project |
+| Slider | native: arpeggiator rate (zones mode: go to marker 1-6, orange) | same |
 
 The encoders and pushes act on the **selected** track, so the Exquis is the "what I am working on" surface while the
 Oxygen keeps its fixed track banks. The shift comes from the FCB1010 bridge unit, which injects CC 105 on channel 14 into the Exquis input as well as

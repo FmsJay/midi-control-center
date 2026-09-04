@@ -121,7 +121,9 @@ M.EXQUIS_BUTTONS = {
 M.EXQUIS_BUTTON_BUILTINS = {
     { id = "transport_play", name = "Play / stop (toggle, LED = playing)" }, { id = "transport_record", name = "Record (toggle, LED = armed)" },
     { id = "transport_loop", name = "Repeat (toggle, LED = on)" }, { id = "transport_stop", name = "Stop" }, { id = "tap_tempo", name = "Tap tempo (Oxygen watcher)" },
+    { id = "mode_next", name = "Next Exquis mode (LED = mode colour)" }, { id = "mode_prev", name = "Previous Exquis mode (LED = mode colour)" },
 }
+M.EXQUIS_SLIDER_MODES = { { id = "native", name = "Native: the keyboard's arpeggiator rate slider" }, { id = "zones", name = "Six zones as buttons (REAPER)" } }
 M.EXQUIS_ENCODER_KINDS = {
     { id = "none", name = "Nothing" }, { id = "selected_volume", name = "Selected track volume" }, { id = "selected_pan", name = "Selected track pan" },
     { id = "master_volume", name = "Master volume" }, { id = "selected_send", name = "Selected track send N" }, { id = "browse_tracks", name = "Browse tracks" },
@@ -132,22 +134,22 @@ M.EXQUIS_PUSH_KINDS = {
     { id = "none", name = "Nothing" }, { id = "selected_mute", name = "Mute selected track (LED)" }, { id = "selected_solo", name = "Solo selected track (LED)" },
     { id = "selected_arm", name = "Arm selected track (LED)" }, { id = "tap_tempo", name = "Tap tempo (Oxygen watcher)" },
     { id = "action", name = "REAPER action" }, { id = "transport", name = "Transport toggle" },
+    { id = "mode_next", name = "Next Exquis mode" }, { id = "mode_prev", name = "Previous Exquis mode" },
 }
 M.EXQUIS_SLIDER_KINDS = { { id = "none", name = "Nothing" }, { id = "action", name = "REAPER action" }, { id = "transport", name = "Transport toggle" } }
 
-function M.exquis_default()
+-- one Exquis "mode": a full set of assignments (like an Oxygen pad mode / layout)
+function M.exquis_mode_track()
     local function act(cmd, col) return { kind = "action", command = cmd, colour = col } end
     local slider = {}
     for k = 1, 6 do slider[k] = act(40160 + k, "orange") end
     return {
-        enabled = false,                      -- the public default ships it off; the first-time setup turns it on when an Exquis is found
-        shift_cc = 105, shift_channel = 13,   -- the FCB1010 bridge's hold shift, same as the keyboard
-        port1_input_device = 14,
+        name = "Track", colour = "white",
         buttons = {
             play = { kind = "builtin", builtin = "transport_play", colour = "green" },
             record = { kind = "builtin", builtin = "transport_record", colour = "red" },
             loop = { kind = "builtin", builtin = "transport_loop", colour = "yellow" },
-            clips = act(40157, "white"), undo = act(40029, "violet"), redo = act(40030, "violet"),
+            clips = { kind = "builtin", builtin = "mode_next" }, undo = act(40029, "violet"), redo = act(40030, "violet"),
             down = act(40286, "azure"), up = act(40285, "azure"),
         },
         encoders = {
@@ -170,6 +172,51 @@ function M.exquis_default()
             },
         },
     }
+end
+function M.exquis_mode_device()
+    local function act(cmd, col) return { kind = "action", command = cmd, colour = col } end
+    return {
+        name = "Device", colour = "cyan",
+        buttons = {
+            play = { kind = "builtin", builtin = "transport_play", colour = "green" },
+            record = { kind = "builtin", builtin = "transport_record", colour = "red" },
+            loop = { kind = "builtin", builtin = "transport_loop", colour = "yellow" },
+            clips = { kind = "builtin", builtin = "mode_next" }, undo = act(40029, "violet"), redo = act(40030, "violet"),
+            down = act(40286, "azure"), up = act(40285, "azure"),
+        },
+        encoders = {
+            { kind = "fx_param", index = 0, colour = "cyan" }, { kind = "fx_param", index = 1, colour = "cyan" },
+            { kind = "fx_param", index = 2, colour = "cyan" }, { kind = "fx_param", index = 3, colour = "cyan" },
+        },
+        pushes = {
+            { kind = "selected_mute", colour = "red" }, { kind = "selected_solo", colour = "yellow" },
+            { kind = "selected_arm", colour = "red" }, { kind = "tap_tempo", colour = "white" },
+        },
+        slider = {},
+        shift = { buttons = {}, encoders = {
+            { kind = "fx_param", index = 4, colour = "azure" }, { kind = "fx_param", index = 5, colour = "azure" },
+            { kind = "fx_param", index = 6, colour = "azure" }, { kind = "fx_param", index = 7, colour = "azure" },
+        } },
+    }
+end
+function M.exquis_default()
+    return {
+        enabled = false,                      -- the public default ships it off; the first-time setup turns it on when an Exquis is found
+        shift_cc = 105, shift_channel = 13,   -- the FCB1010 bridge's hold shift, same as the keyboard
+        port1_input_device = 14,
+        slider_mode = "native",               -- the slider stays the keyboard's arpeggiator-rate slider; "zones" gives six REAPER buttons
+        modes = { M.exquis_mode_track(), M.exquis_mode_device() },
+    }
+end
+-- older saved models had one flat set of assignments; lift it into modes[1]
+function M.exquis_migrate(x)
+    if type(x) ~= "table" then return x end
+    if x.modes == nil and (x.buttons or x.encoders) then
+        x.modes = { { name = "Track", colour = "white", buttons = x.buttons, encoders = x.encoders, pushes = x.pushes, slider = x.slider, shift = x.shift } }
+        x.buttons, x.encoders, x.pushes, x.slider, x.shift = nil, nil, nil, nil, nil
+        x.slider_mode = x.slider_mode or "zones"
+    end
+    return x
 end
 
 local function exquis_colour_ok(a)
@@ -202,30 +249,38 @@ function M.validate_exquis(x, errors)
         if not ok then errors[#errors + 1] = where .. ": unknown kind" end
         if a.kind == "actions" and not (is_command_value(a.cw) and is_command_value(a.ccw)) then errors[#errors + 1] = where .. ": cw and ccw commands required" end
     end
-    for _, b in ipairs(M.EXQUIS_BUTTONS) do
-        check_button(x.buttons and x.buttons[b.id], "exquis.buttons." .. b.id)
-        check_button(x.shift and x.shift.buttons and x.shift.buttons[b.id], "exquis.shift.buttons." .. b.id)
-    end
-    for i = 1, 4 do
-        check_encoder(x.encoders and x.encoders[i], "exquis.encoders." .. i)
-        check_encoder(x.shift and x.shift.encoders and x.shift.encoders[i], "exquis.shift.encoders." .. i)
-        local pu = x.pushes and x.pushes[i]
-        if pu ~= nil then
-            local ok = false
-            for _, k in ipairs(M.EXQUIS_PUSH_KINDS) do if k.id == pu.kind then ok = true end end
-            if not ok then errors[#errors + 1] = "exquis.pushes." .. i .. ": unknown kind" end
-            if pu.kind == "action" and not is_command_value(pu.command) then errors[#errors + 1] = "exquis.pushes." .. i .. ": bad command" end
-            if not exquis_colour_ok(pu) then errors[#errors + 1] = "exquis.pushes." .. i .. ": unknown colour" end
+    M.exquis_migrate(x)
+    if x.slider_mode ~= nil and x.slider_mode ~= "native" and x.slider_mode ~= "zones" then errors[#errors + 1] = "exquis.slider_mode must be native or zones" end
+    if type(x.modes) ~= "table" or #x.modes < 1 then errors[#errors + 1] = "exquis needs at least one mode"; return end
+    if #x.modes > 8 then errors[#errors + 1] = "exquis: at most 8 modes" end
+    for mi, x in ipairs(x.modes) do
+        local pre = "exquis.modes." .. mi .. "."
+        if x.colour and not exquis_colour_ok(x) then errors[#errors + 1] = pre .. "colour unknown" end
+        for _, b in ipairs(M.EXQUIS_BUTTONS) do
+            check_button(x.buttons and x.buttons[b.id], pre .. "buttons." .. b.id)
+            check_button(x.shift and x.shift.buttons and x.shift.buttons[b.id], pre .. "shift.buttons." .. b.id)
         end
-    end
-    for k = 1, 6 do
-        local sl = x.slider and x.slider[k]
-        if sl ~= nil then
-            local ok = false
-            for _, kk in ipairs(M.EXQUIS_SLIDER_KINDS) do if kk.id == sl.kind then ok = true end end
-            if not ok then errors[#errors + 1] = "exquis.slider." .. k .. ": unknown kind" end
-            if sl.kind == "action" and not is_command_value(sl.command) then errors[#errors + 1] = "exquis.slider." .. k .. ": bad command" end
-            if not exquis_colour_ok(sl) then errors[#errors + 1] = "exquis.slider." .. k .. ": unknown colour" end
+        for i = 1, 4 do
+            check_encoder(x.encoders and x.encoders[i], pre .. "encoders." .. i)
+            check_encoder(x.shift and x.shift.encoders and x.shift.encoders[i], pre .. "shift.encoders." .. i)
+            local pu = x.pushes and x.pushes[i]
+            if pu ~= nil then
+                local ok = false
+                for _, k in ipairs(M.EXQUIS_PUSH_KINDS) do if k.id == pu.kind then ok = true end end
+                if not ok then errors[#errors + 1] = pre .. "pushes." .. i .. ": unknown kind" end
+                if pu.kind == "action" and not is_command_value(pu.command) then errors[#errors + 1] = pre .. "pushes." .. i .. ": bad command" end
+                if not exquis_colour_ok(pu) then errors[#errors + 1] = pre .. "pushes." .. i .. ": unknown colour" end
+            end
+        end
+        for k = 1, 6 do
+            local sl = x.slider and x.slider[k]
+            if sl ~= nil then
+                local ok = false
+                for _, kk in ipairs(M.EXQUIS_SLIDER_KINDS) do if kk.id == sl.kind then ok = true end end
+                if not ok then errors[#errors + 1] = pre .. "slider." .. k .. ": unknown kind" end
+                if sl.kind == "action" and not is_command_value(sl.command) then errors[#errors + 1] = pre .. "slider." .. k .. ": bad command" end
+                if not exquis_colour_ok(sl) then errors[#errors + 1] = pre .. "slider." .. k .. ": unknown colour" end
+            end
         end
     end
 end
