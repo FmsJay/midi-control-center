@@ -158,7 +158,7 @@ To check a change compiles before restarting, run it through any Lua 5.4 / Luau 
 - **Exquis** (`docs/EXQUIS.md`). A second ReaLearn unit puts the Exquis into Developer Mode for its encoders, slider
   and buttons while the hexagonal keys keep sending MPE to your instruments. Transport, undo/redo, track browsing,
   selected-track volume/pan/mute/solo/arm, tempo, markers on the slider, RGB LEDs from REAPER state, and the same
-  foot-switch shift as the keyboard. Close the Exquis app first; it owns the port.
+  foot-switch shift as the keyboard. Verified on firmware 3.0.0. Close the Exquis app first; it owns the port.
 
 Both are added by the first-time setup script when it finds the devices (edit the two names at its top if yours differ).
 

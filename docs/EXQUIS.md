@@ -1,7 +1,9 @@
 # Exquis (Intuitive Instruments) as a second surface
 
-Research date 2026-09-04, Exquis app 3.0.0, Developer Mode spec 2025-03-10. The keyboard needs **firmware 2.1 or
-newer** for Developer Mode (hold Settings, then press Settings again: green hexagons show major.minor.patch).
+Research date 2026-09-04, Exquis app 3.0.0, Developer Mode spec 2025-03-10; verified on hardware with firmware 3.0.0 the
+same day (transport, LEDs, encoders, pushes, slider, keys passing through). The keyboard needs **firmware 2.1 or newer**
+for Developer Mode. A quick way to read the firmware without the keyboard's menu: the USB descriptor revision
+(`USB\VID_2985&PID_0007&REV_xxxx` in Device Manager) is the firmware version, `REV_0200` = 2.0.0.
 
 ## What the device is, in MIDI terms
 
@@ -72,7 +74,8 @@ hard), run the action `Exquis - Developer mode off` or power-cycle the Exquis.
 | Encoder push 4 | tap tempo (through the Oxygen watcher) | same |
 | Slider zones 1-6 | go to marker 1-6 (orange) | same |
 
-The shift comes from the FCB1010 bridge unit, which injects CC 105 on channel 14 into the Exquis input as well as
+The encoders and pushes act on the **selected** track, so the Exquis is the "what I am working on" surface while the
+Oxygen keeps its fixed track banks. The shift comes from the FCB1010 bridge unit, which injects CC 105 on channel 14 into the Exquis input as well as
 into the Oxygen's port (see `FCB1010_SHIFT.md`). Edit the preset to change the layout; it is a short Luau file
 with helpers `button`, `shifted`, `led`, `paint`.
 
