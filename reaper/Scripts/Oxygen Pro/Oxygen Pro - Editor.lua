@@ -599,11 +599,7 @@ end
 local function do_reset()
   push_undo()
   model = M.default()
-  after_edit('Reset to the default (hand-built) layout')
-end
-local function do_restore()
-  local ok, msg = apply.restore_hand_written()
-  status.text, status.col = tostring(msg), ok and C.ok or C.err
+  after_edit('Reset to the shipped default layout')
 end
 
 local function draw_topbar()
@@ -690,7 +686,6 @@ local function draw_topbar()
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, 'Reset to default') then do_reset() end
   ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, 'Restore hand-written') then do_restore() end
   ImGui.SameLine(ctx)
   begin_disabled(#undo_stack == 0)
   if ImGui.Button(ctx, 'Undo') then undo() end

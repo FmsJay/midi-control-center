@@ -9,7 +9,7 @@
 -- 4. Bank: ReaLearn echoes Bank < / > (CC 110 / 111) into port 1; pad 1-4 flashes white for the new bank number.
 -- 2. Watches the DAW button (CC 113 on port 3, which ReaLearn uses to toggle the layout) and answers
 --    each press with a one-second colour sweep across the pads so you can see which layout is active:
---    green = General DAW, azure = LoopCanvas. The keyboard's own screen cannot be written to in this mode.
+--    in the layout's colour (read from the preset's sweep_colour fields). The screen cannot be written to in this mode.
 --
 -- Runs as a background defer loop (started from __startup.lua with dofile, or run once from the Actions
 -- list). Needs MIDIOUT3 enabled as an output and MIDIIN3 enabled for control in Preferences > MIDI Devices.
@@ -23,7 +23,20 @@ local BACK_CC    = 104                              -- Back layer echo from ReaL
 local BACK_PATTERN = { 50, 35 }                     -- Back layer: violet / rose checkerboard, painted at once
 local BANK_CC_DOWN, BANK_CC_UP = 110, 111           -- Bank < / > echoes from ReaLearn (only while the Back layer is off)
 local BANK_COLOUR, BANK_FLASH_SEC = 63, 0.45         -- pad 1-4 lights white for the newly selected bank
-local LAYOUT_COLOUR = { [0] = 12, [1] = 56 }        -- 0 General DAW = green, 1 LoopCanvas = azure
+local COLOUR_CODE = { off = 0, red = 3, orange = 11, green = 12, chartreuse = 14, yellow = 15, rose = 35,
+                      aqua = 44, blue = 48, violet = 50, magenta = 51, azure = 56, cyan = 60, white = 63 }
+local LAYOUT_COLOUR = { [0] = 12 }                  -- filled from the preset's layouts (sweep_colour), default green
+local PRESET_PATH = reaper.GetResourcePath() .. "/Data/helgoboss/realearn/presets/main/oxygen-pro-61/live.preset.luau"
+-- the generated preset lists every layout with a sweep_colour; read them so the sweep matches the editor's model
+local function load_layout_colours()
+  local f = io.open(PRESET_PATH, "r")
+  if not f then return end
+  local src = f:read("*a"); f:close()
+  local found, i = {}, 0
+  for name in src:gmatch('sweep_colour%s*=%s*"(%a+)"') do found[i] = COLOUR_CODE[name] or 12; i = i + 1 end
+  if i > 0 then LAYOUT_COLOUR = found end
+end
+load_layout_colours()
 local PAD_NOTE = { 40, 41, 42, 43, 48, 49, 50, 51, 36, 37, 38, 39, 44, 45, 46, 47 }
 
 local function log(s) reaper.ShowConsoleMsg("[oxygen] " .. s .. "\n") end
@@ -57,7 +70,7 @@ end
 local out_idx, present = nil, false
 local queue = {}                      -- pending steps { at, msg } or { at, resync = true }, kept sorted by time
 local next_poll = 0
-local layout = 0                      -- mirrors ReaLearn's layout parameter (both start at 0, toggle on CC 113)
+local layout = 0                      -- mirrors ReaLearn's layout parameter (both start at 0, step + wrap on CC 113)
 local bank = 0                        -- mirrors ReaLearn's bank parameter 0-3 (clamped, no wrap, like the preset)
 local last_seq = nil
 
@@ -134,9 +147,12 @@ local function poll_layout_button(now)
     if last_seq and #buf >= 3 then
       local status, d1, d2 = buf:byte(1, 3)
       if status == 0xB0 and d1 == LAYOUT_CC and d2 > 0 then
-        layout = 1 - layout
-        flash(now, LAYOUT_COLOUR[layout])
-        log("layout press seen -> " .. (layout == 0 and "General DAW" or "LoopCanvas"))
+        load_layout_colours()
+        local n = 0
+        for _ in pairs(LAYOUT_COLOUR) do n = n + 1 end
+        layout = (layout + 1) % math.max(1, n)
+        flash(now, LAYOUT_COLOUR[layout] or 12)
+        log("layout press seen -> layout " .. (layout + 1) .. " of " .. n)
       elseif status == 0xB0 and d1 == TAP_CC and d2 > 0 then
         tap(now)
       elseif status == 0xB0 and d1 == BACK_CC then

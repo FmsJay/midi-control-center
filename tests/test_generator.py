@@ -1,9 +1,11 @@
 """Offline tests for the Oxygen Pro 61 editor model + generator (needs `pip install lupa`).
 
-Usage:  python tests/test_generator.py [path/to/oxygen_editor] [path/to/reference live.preset.luau]
+Usage:  python tests/test_generator.py [path/to/oxygen_editor] [path/to/reference preset] [--update-golden]
 
-1. The default model must generate a preset that BEHAVES exactly like the hand-written reference preset:
+1. The default model must generate a preset that BEHAVES exactly like the reference preset
+   (tests/golden/live.preset.golden.luau, a frozen snapshot; the original hand-written preset was the first reference):
    same set of (source, glue, target, effective activation, enabled flags) after expanding group conditions.
+   Pass --update-golden after an intentional change to the shipped layout.
 2. The generated text must compile and return parameters/groups/mappings with unique ids.
 3. A modified model must produce the expected extra mappings; validation must catch broken models.
 """
@@ -11,8 +13,11 @@ import json, os, sys
 import lupa
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-EDITOR_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "..", "reaper", "Scripts", "Oxygen Pro", "oxygen_editor")
-REFERENCE = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "..", "realearn", "presets", "main", "oxygen-pro-61", "live.preset.hand-written.luau")
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+UPDATE_GOLDEN = "--update-golden" in sys.argv
+EDITOR_DIR = ARGS[0] if len(ARGS) > 0 else os.path.join(HERE, "..", "reaper", "Scripts", "Oxygen Pro", "oxygen_editor")
+GOLDEN = os.path.join(HERE, "golden", "live.preset.golden.luau")
+REFERENCE = ARGS[1] if len(ARGS) > 1 else GOLDEN
 EDITOR_DIR = os.path.abspath(EDITOR_DIR).replace("\\", "/")
 
 
@@ -119,7 +124,13 @@ def main():
     assert len(local_ids) == 4 * 2 * len(to_py(model["banks"])), "expected 8 Off-mode LED mappings per bank, got %d" % len(local_ids)
     echoes = [m for m in with_leds["mappings"] if is_state_echo(m)]
     assert len(echoes) == 11, "expected 11 state-echo mappings, got %d" % len(echoes)
-    model["off_mode_local_leds"] = False
+    if UPDATE_GOLDEN:
+        with open(GOLDEN, "w", encoding="utf-8", newline="\n") as f:
+            f.write(gen.generate(model, L.table(date="shipped default", author="Oxygen Pro 61 editor (shipped default)")))
+        print("golden updated:", GOLDEN)
+    reference_is_golden = os.path.abspath(REFERENCE) == os.path.abspath(GOLDEN)
+    if not reference_is_golden:
+        model["off_mode_local_leds"] = False     # the hand-written preset predates the Off-mode LEDs
     text = gen.generate(model, L.table(date="test"))
     generated = load_preset(L, text, "generated")
     reference = load_preset(L, open(REFERENCE, encoding="utf-8").read(), "reference")
@@ -148,7 +159,7 @@ def main():
     # 3. a modified model
     m2 = model_mod.copy(model)
     m2["buttons"]["loop"] = L.table(kind="action", command=40073)          # Loop button -> action
-    m2["layouts"][1]["pad_modes"][5]["kind"] = "custom"                        # Free -> custom with one pad
+    m2["layouts"][1]["pad_modes"][5]["kind"] = "custom"                        # Free -> custom with one pad (layout 1)
     m2["layouts"][1]["pad_modes"][5]["pads"] = L.table()
     m2["layouts"][1]["pad_modes"][5]["pads"][3] = L.table(kind="action", command=40001, colour="cyan")
     assert not to_py(model_mod.validate(m2)), to_py(model_mod.validate(m2))

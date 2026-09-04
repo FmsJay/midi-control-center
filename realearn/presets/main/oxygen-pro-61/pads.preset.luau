@@ -6,8 +6,8 @@
 ---     so this runs in its own ReaLearn unit: input "Oxygen Pro 61", output "MIDIOUT3 (Oxygen Pro 61)".
 ---     Bank 1: pads play instruments (notes 36-51 on channel 10) and light by velocity
 ---             (blue at rest, green / yellow / red for soft / medium / hard hits).
----     Bank 2: pads 1-8 LoopCanvas press slot 1-8, pads 9-16 LoopCanvas drop slot 1-8 (CC 36-51 on channel 2).
----     Bank 3: pads 1-8 LoopCanvas return section 1-8, pads 9-16 LoopCanvas align slot 1-8 (channel 3).
+---     Bank 2: pads send CC 36-51 on channel 2; painted green / azure. Assign actions in the BANK 2 section below.
+---     Bank 3: pads send CC 36-51 on channel 3; painted yellow / violet. Assign actions in the BANK 3 section below.
 ---     Bank 4: free (channel 4), pads white.
 ---     The bank is inferred from the channel of the last pad message, because bank buttons live on port 3.
 ---     Pad LED colours need the M-Audio LED unlock (oxygen_led_unlock.py) after every power-on.
@@ -101,21 +101,11 @@ for k = 1, 16 do
           target = param_target(k) }
 end
 
--- ---- BANK 2: LoopCanvas press / drop --------------------------------------------
+-- ---- BANK 2 / BANK 3: placeholders (colour only). To give a pad a REAPER action, add a mapping like:
+--   add { id = "b2-pad-1", group = "control", feedback_enabled = false, source = cc_button(1, 36),
+--         glue = { button_filter = "PressOnly" }, target = { kind = "ReaperAction", command = 40001, invocation = "Trigger" } }
 for k = 1, 16 do
-    local verb = (k <= 8) and ("_LOOPCANVAS_PRESS_SLOT_" .. k) or ("_LOOPCANVAS_DROP_SLOT_" .. (k - 8))
-    add { id = string.format("b2-pad-%d", k), name = verb, group = "control", feedback_enabled = false,
-          source = cc_button(1, 35 + k), glue = { button_filter = "PressOnly" },
-          target = { kind = "ReaperAction", command = verb, invocation = "Trigger" } }
     paint("bank2", k, (k <= 8) and C.green or C.azure)
-end
-
--- ---- BANK 3: LoopCanvas return section / align slot ------------------------------
-for k = 1, 16 do
-    local verb = (k <= 8) and ("_LOOPCANVAS_RETURN_SECTION_" .. k) or ("_LOOPCANVAS_ALIGN_SLOT_" .. (k - 8))
-    add { id = string.format("b3-pad-%d", k), name = verb, group = "control", feedback_enabled = false,
-          source = cc_button(2, 35 + k), glue = { button_filter = "PressOnly" },
-          target = { kind = "ReaperAction", command = verb, invocation = "Trigger" } }
     paint("bank3", k, (k <= 8) and C.yellow or C.violet)
 end
 

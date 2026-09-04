@@ -2,7 +2,8 @@
 --
 -- A model is a plain table (saved as JSON) that fully describes what every control on the keyboard does.
 -- The generator turns it into a ReaLearn Luau preset (see generator.lua + interpreter.luau).
--- `model.default()` reproduces the hand-built "Live mode" layout exactly, so applying the default model changes nothing.
+-- `model.default()` is the shipped layout (one "General DAW" layout). Add layouts, pad modes, banks and modifiers in the editor;
+-- a second layout with per-layout Back combos is a supported shape (`kind = "per_layout"` assignments).
 
 local M = {}
 
@@ -99,14 +100,6 @@ function M.default()
     markers[15] = action(40026, "green")
     markers[16] = action(40364, "off", "magenta")
 
-    local loop_press, loop_return = {}, {}
-    for k = 1, 8 do
-        loop_press[k]      = action("_LOOPCANVAS_PRESS_SLOT_" .. k, "green")
-        loop_press[k + 8]  = action("_LOOPCANVAS_DROP_SLOT_" .. k, "azure")
-        loop_return[k]     = action("_LOOPCANVAS_RETURN_SECTION_" .. k, "yellow")
-        loop_return[k + 8] = action("_LOOPCANVAS_ALIGN_SLOT_" .. k, "violet")
-    end
-
     return {
         version = 1,
         port1_input_device = 14,
@@ -119,14 +112,6 @@ function M.default()
                   { name = "Mixer 9-16",  kind = "mixer", first_track = 8 },
                   { name = "Markers",     kind = "custom", pads = markers },
                   { name = "Free",        kind = "free", colour = "white" },
-              } },
-            { id = "loopcanvas", name = "LoopCanvas", sweep_colour = "azure",
-              pad_modes = {
-                  { name = "Drums",        kind = "drums" },
-                  { name = "Loop press/drop",   kind = "custom", pads = loop_press },
-                  { name = "Loop return/align", kind = "custom", pads = loop_return },
-                  { name = "Mixer 1-8",    kind = "mixer", first_track = 0 },
-                  { name = "Free",         kind = "free", colour = "white" },
               } },
         },
         banks = {
@@ -161,8 +146,7 @@ function M.default()
                     play          = { kind = "action", command = 40157 },
                     record        = { kind = "action", command = 40364 },
                     loop          = { kind = "action", command = 40078 },
-                    stop          = { kind = "per_layout", layouts = { general = { kind = "action", command = 40026 },
-                                                                       loopcanvas = { kind = "action", command = "_LOOPCANVAS_SECTION_CANCEL" } } },
+                    stop          = { kind = "action", command = 40026 },
                     encoder_press = { kind = "action", command = 40001 },
                 },
                 encoder_turn = { kind = "zoom" },

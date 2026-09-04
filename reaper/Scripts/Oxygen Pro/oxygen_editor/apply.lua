@@ -1,8 +1,6 @@
 -- Oxygen Pro 61 editor: write the generated preset into REAPER and make ReaLearn pick it up.
--- REAPER-only (uses the reaper API). Keeps the hand-written preset safe:
---   * the first apply copies live.preset.luau to live.preset.hand-written.luau (never overwritten again)
---   * every apply writes live.preset.<timestamp>.bak before replacing live.preset.luau
---   * restore_hand_written() puts the original back
+-- REAPER-only (uses the reaper API). Every apply writes live.preset.<timestamp>.bak next to the preset before
+-- replacing it, so any earlier state can be copied back by hand; "Reset to default" + Apply restores the shipped layout.
 
 local A = {}
 
@@ -18,7 +16,6 @@ local model_mod = require("model")
 local res = reaper.GetResourcePath()
 A.PRESET_DIR  = res .. "/Data/helgoboss/realearn/presets/main/oxygen-pro-61"
 A.PRESET      = A.PRESET_DIR .. "/live.preset.luau"
-A.HAND        = A.PRESET_DIR .. "/live.preset.hand-written.luau"
 A.MODEL_PATH  = A.DIR .. "/model.json"
 A.HELGOBOX_NAME = "Helgobox - ReaLearn & Playtime"
 A.RESYNC_CMD  = "_REALEARN_SEND_ALL_FEEDBACK"
@@ -90,10 +87,6 @@ function A.apply(model, opts)
     -- self-check: the generated text must load and return a preset table
     local preset, err = generator.evaluate(text)
     if not preset then return false, "generated preset does not run: " .. tostring(err) end
-    if not file_exists(A.HAND) then
-        local orig = read_file(A.PRESET)
-        if orig then write_file(A.HAND, orig) end
-    end
     local current = read_file(A.PRESET)
     if current then write_file(A.PRESET_DIR .. "/live.preset." .. os.date("%Y%m%d-%H%M%S") .. ".bak", current) end
     local ok, werr = write_file(A.PRESET, text)
@@ -104,16 +97,6 @@ function A.apply(model, opts)
     local msg = string.format("wrote %d mappings to live.preset.luau", #preset.mappings)
     if rl_ok then msg = msg .. "; ReaLearn reloaded" else msg = msg .. "; restart REAPER to load it (" .. tostring(rl_err) .. ")" end
     return true, msg, rl_ok
-end
-
-function A.restore_hand_written()
-    local orig = read_file(A.HAND)
-    if not orig then return false, "no hand-written backup found (nothing was ever applied)" end
-    local ok, err = write_file(A.PRESET, orig)
-    if not ok then return false, tostring(err) end
-    local rl_ok = A.reload_instance()
-    A.send_all_feedback()
-    return true, rl_ok and "hand-written preset restored and reloaded" or "hand-written preset restored; restart REAPER to load it"
 end
 
 function A.load_model()

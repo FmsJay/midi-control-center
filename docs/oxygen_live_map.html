@@ -204,16 +204,16 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
     <div class="card">
       <h3>Pad modes, by layout (DAW button toggles the layout)</h3>
       <table>
-        <thead><tr><th>#</th><th>General DAW</th><th>LoopCanvas</th></tr></thead>
+        <thead><tr><th>#</th><th>General DAW (shipped layout)</th></tr></thead>
         <tbody>
           <tr><td>1</td><td colspan="2"><b>Drums</b>: hits are re-emitted into the <span class="mono">Oxygen Pro 61</span> port-1 input as channel-10 notes 36-51, so drum tracks keep their usual input; <span class="sw" style="background:var(--c-blue)"></span>blue at rest, <span class="sw" style="background:var(--c-green)"></span>soft <span class="sw" style="background:var(--c-yellow)"></span>medium <span class="sw" style="background:var(--c-red)"></span>hard</td></tr>
-          <tr><td>2</td><td>Mixer tracks 1-8: pads 1-8 mute <span class="sw" style="background:var(--c-red)"></span>muted / <span class="sw" style="background:var(--c-chart)"></span>open; pads 9-16 solo <span class="sw" style="background:var(--c-yellow)"></span>on / <span class="sw" style="background:var(--c-azure)"></span>off</td><td><span class="sw" style="background:var(--c-green)"></span>LoopCanvas press slot 1-8 · <span class="sw" style="background:var(--c-azure)"></span>drop slot 1-8</td></tr>
-          <tr><td>3</td><td>Mixer tracks 9-16, same colours</td><td><span class="sw" style="background:var(--c-yellow)"></span>LoopCanvas return section 1-8 · <span class="sw" style="background:var(--c-violet)"></span>align slot 1-8</td></tr>
-          <tr><td>4</td><td><span class="sw" style="background:var(--c-orange)"></span>go to marker 1-8 · <span class="sw" style="background:var(--c-white)"></span>insert marker · <span class="sw" style="background:var(--c-azure)"></span>prev / next marker · <span class="sw" style="background:var(--c-yellow)"></span>repeat · <span class="sw" style="background:var(--c-violet)"></span>undo / redo · <span class="sw" style="background:var(--c-green)"></span>save · <span class="sw" style="background:var(--c-magenta)"></span>metronome</td><td>Mixer tracks 1-8</td></tr>
+          <tr><td>2</td><td>Mixer tracks 1-8: pads 1-8 mute <span class="sw" style="background:var(--c-red)"></span>muted / <span class="sw" style="background:var(--c-chart)"></span>open; pads 9-16 solo <span class="sw" style="background:var(--c-yellow)"></span>on / <span class="sw" style="background:var(--c-azure)"></span>off</td></tr>
+          <tr><td>3</td><td>Mixer tracks 9-16, same colours</td></tr>
+          <tr><td>4</td><td><span class="sw" style="background:var(--c-orange)"></span>go to marker 1-8 · <span class="sw" style="background:var(--c-white)"></span>insert marker · <span class="sw" style="background:var(--c-azure)"></span>prev / next marker · <span class="sw" style="background:var(--c-yellow)"></span>repeat · <span class="sw" style="background:var(--c-violet)"></span>undo / redo · <span class="sw" style="background:var(--c-green)"></span>save · <span class="sw" style="background:var(--c-magenta)"></span>metronome</td></tr>
           <tr><td>5</td><td colspan="2"><span class="sw" style="background:var(--c-white)"></span>Free: white, nothing mapped</td></tr>
         </tbody>
       </table>
-      <p class="hint" style="color:var(--muted);margin:10px 0 0">On each DAW press the pads sweep green (General) or azure (LoopCanvas) for a second, then return to their real colours. The marker and utility action IDs are REAPER defaults; confirm them once in the Actions window.</p>
+      <p class="hint" style="color:var(--muted);margin:10px 0 0">On each DAW press the pads sweep in the layout's colour (green for General DAW) for a second, then return to their real colours. Add layouts and pad modes in the editor. The marker and utility action IDs are REAPER defaults; confirm them once in the Actions window.</p>
     </div>
   </div>
 
@@ -228,7 +228,7 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
           <tr><td>Back, then Play</td><td>insert marker at the play position (40157)</td></tr>
           <tr><td>Back, then Record</td><td>metronome on / off (40364)</td></tr>
           <tr><td>Back, then Loop</td><td>show / hide the mixer (40078)</td></tr>
-          <tr><td>Back, then Stop</td><td>General DAW: save project (40026) · LoopCanvas: cancel a pending section change</td></tr>
+          <tr><td>Back, then Stop</td><td>save project (40026)</td></tr>
           <tr><td>Back, then encoder turn</td><td>zoom the arrange view out / in (1011 / 1012)</td></tr>
           <tr><td>Back, then encoder press</td><td>insert new track (40001)</td></tr>
           <tr><td>Back, then faders / knobs / fader buttons / pads</td><td>unchanged; the layer stays armed</td></tr>
@@ -330,8 +330,8 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
   const state={bank:0,mode:2,knob:0,pad:0,layout:0,shift:false,back:false,layer:'reaper'};
   const MODE_NAMES=['Off','Record','Select','Mute','Solo'];
   const KNOB_NAMES=['Pan','Device','Send 1','Sel. sends'];
-  const LAYOUT_NAMES=['General DAW','LoopCanvas'];
-  const PAD_NAMES=[['Drums','Mixer 1-8','Mixer 9-16','Markers','Free'],['Drums','Loop 1','Loop 2','Mixer 1-8','Free']];
+  const LAYOUT_NAMES=['General DAW'];
+  const PAD_NAMES=[['Drums','Mixer 1-8','Mixer 9-16','Markers','Free']];
   const MARKER_PADS=[...Array.from({length:8},(_,i)=>({c:C.orange,fn:'marker '+(i+1)})),
     {c:C.white,fn:'insert marker'},{c:C.azure,fn:'prev marker'},{c:C.azure,fn:'next marker'},{c:C.yellow,fn:'repeat'},
     {c:C.violet,dark:true,fn:'undo'},{c:C.violet,dark:true,fn:'redo'},{c:C.green,fn:'save'},{c:C.magenta,dark:true,fn:'metronome'}];
@@ -381,10 +381,7 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
     if(L()) return {c:C.grey,dark:true,fn:'pad note '+n};
     if(p===0) return {c:C.blue,dark:true,fn:'drum '+n};
     if(p===4) return {c:C.white,fn:'free'};
-    if(state.layout===0){ if(p===1) return mixerPad(k,0); if(p===2) return mixerPad(k,8); return MARKER_PADS[k-1]; }
-    if(p===1) return top?{c:C.green,fn:'press '+k}:{c:C.azure,fn:'drop '+(k-8)};
-    if(p===2) return top?{c:C.yellow,fn:'return '+k}:{c:C.violet,dark:true,fn:'align '+(k-8)};
-    return mixerPad(k,0);
+    if(p===1) return mixerPad(k,0); if(p===2) return mixerPad(k,8); return MARKER_PADS[k-1];
   }
   // fixed labels per layer: [reaper, local, shift, back held]
   const FIXED={
@@ -392,7 +389,7 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
     wheelFn:['keys, port 1','pitch bend · mod CC 1','—','—'],
     keysFn:['notes + aftertouch (port 1)','notes, aftertouch, chord & scale modes','chord keys C2-Bb3 · channel A5-C7','notes as usual'],
     modeFn:['cycles button modes','Off / Rec / Select / Mute / Solo','Global Settings menu','—'],
-    dawFn:['layout toggle','hold: DAW select menu','edit User DAW (n/a)','—'],
+    dawFn:['next layout (one shipped)','hold: DAW select menu','edit User DAW (n/a)','—'],
     presetFn:['Preset mode (port 1)','hold: preset select menu','edit current preset','—'],
     tempoFn:['keyboard tempo · Clock = External','tap tempo · hold: tempo menu','no keystroke (measured)','—'],
     bankLFn:['fader bank − (pad 1-4 flashes)','bank −','lock ARP knobs','PREV MARKER'],
@@ -404,7 +401,7 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
     loopFn:['repeat','loop on/off','—','MIXER'],
     backFn:['press: arm Back layer','back / exit menu','delete letter (naming)','ARMED · press again = cancel'],
     encFn:['browse tracks · press: TAP TEMPO','scroll menus · press: enter','—','ZOOM · press: NEW TRACK'],
-    stopFn:['stop','stop · double: to start','MIDI PANIC (port 1)','SAVE · Loop: CANCEL'],
+    stopFn:['stop','stop · double: to start','MIDI PANIC (port 1)','SAVE PROJECT'],
     playFn:['play / stop','play','—','MARKER +'],
     recFn:['record','record','—','METRO­NOME'],
   };
@@ -464,7 +461,7 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
       : state.pad===0 ? 'Drum mode: each hit is re-emitted as a channel-10 note on the Oxygen Pro 61 port-1 input. Colour follows hit strength.'
       : name.startsWith('Mixer') ? 'Mixer mode: pad colour is live state. Red = muted, chartreuse = open; yellow = soloed, azure = off.'
       : name==='Markers' ? 'Markers & utilities: go to marker 1-8, insert marker, previous/next marker, repeat (yellow when on), undo, redo, save, metronome (lit when on).'
-      : name==='Free' ? 'Free mode: nothing mapped; MIDI-learn these notes in REAPER if you want.' : 'LoopCanvas actions fire on the hit; colours identify the mode.';
+      : name==='Free' ? 'Free mode: nothing mapped; MIDI-learn these notes in REAPER if you want.' : 'Custom pad mode: each pad fires what the editor assigned; colours identify the mode.';
     $('shiftBtn').setAttribute('aria-pressed',String(state.shift));
     $('backBtn').setAttribute('aria-pressed',String(B()));
     $('dawBtn').setAttribute('aria-pressed',String(!L()&&state.layout===1));
@@ -476,7 +473,7 @@ th{font-family:"Barlow Condensed",sans-serif;font-size:13px;letter-spacing:.06em
     if(pad){ const k=+pad.dataset.padk; if(state.shift&&k>=9&&k<=11){ state.knob=k-9; state.shift=false; render(); } return; }
     const b=e.target.closest('button.sel'); if(!b||b.classList.contains('static')) return;
     if(b.id==='modeBtn') state.mode=(state.mode+1)%5;
-    if(b.id==='dawBtn') state.layout=1-state.layout;
+    if(b.id==='dawBtn') state.layout=(state.layout+1)%LAYOUT_NAMES.length;
     if(b.id==='shiftBtn') state.shift=!state.shift;
     if(b.id==='backBtn') state.back=!state.back;
     if(b.dataset.bankstep) state.bank=Math.min(3,Math.max(0,state.bank+ +b.dataset.bankstep));
