@@ -543,7 +543,15 @@ local function fit_combo_width(width, texts)
   local avail = ImGui.GetContentRegionAvail(ctx)
   return math.max(width, math.min(widest + 44, avail))
 end
+local function label_left(label)
+  local visible, id = label:match("^(.-)(##.*)$")
+  if visible == nil then visible, id = label, "##" .. label end
+  if visible ~= "" then ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, visible); ImGui.SameLine(ctx) end
+  return id
+end
 local function combo_ids(label, items, cur, width)
+  label = label_left(label)
+  if not width then width = -FLT_MIN end
   if width then
     local names = {}
     for i, it in ipairs(items) do names[i] = it.name end
@@ -563,7 +571,8 @@ end
 
 -- combo over plain strings; returns the newly chosen string or nil
 local function combo_strings(label, list, cur, width)
-  if width then ImGui.SetNextItemWidth(ctx, fit_combo_width(width, list)) end
+  label = label_left(label)
+  ImGui.SetNextItemWidth(ctx, fit_combo_width(width or -FLT_MIN, list))
   local chosen
   if ImGui.BeginCombo(ctx, label, tostring(cur or '-')) then
     stk.combo = stk.combo + 1
@@ -585,8 +594,9 @@ end
 
 -- colour combo with swatches. `cur` may be nil when allow_default; returns changed, new value (false = no change)
 local function colour_combo(label, cur, allow_default, width)
+  label = label_left(label)
   swatch(RGBA[cur or 'off'] or RGBA.off, 16); ImGui.SameLine(ctx)
-  if width then ImGui.SetNextItemWidth(ctx, width) end
+  ImGui.SetNextItemWidth(ctx, width or -FLT_MIN)
   local changed, value = false, nil
   if ImGui.BeginCombo(ctx, label, cur or '(default)') then
     stk.combo = stk.combo + 1
@@ -606,8 +616,9 @@ end
 
 -- Exquis LED colour combo (names from M.EXQUIS_RGB, '(none)' = nil); returns changed, new value
 local function exquis_colour_combo(label, cur, width)
+  label = label_left(label)
   swatch(EXQUIS_RGBA[cur or 'off'] or RGBA.off, 16); ImGui.SameLine(ctx)
-  if width then ImGui.SetNextItemWidth(ctx, width) end
+  ImGui.SetNextItemWidth(ctx, width or -FLT_MIN)
   local changed, value = false, nil
   if ImGui.BeginCombo(ctx, label, cur or '(none)') then
     stk.combo = stk.combo + 1
