@@ -19,6 +19,9 @@ A.PRESET      = A.PRESET_DIR .. "/live.preset.luau"
 A.MODEL_PATH  = A.DIR .. "/model.json"
 A.EXQUIS_DIR  = res .. "/Data/helgoboss/realearn/presets/main/exquis"
 A.EXQUIS_PRESET = A.EXQUIS_DIR .. "/main.preset.luau"
+A.SDP120_DIR  = res .. "/Data/helgoboss/realearn/presets/main/sdp120"
+A.SDP120_PRESET = A.SDP120_DIR .. "/filter.preset.luau"
+A.GEN_KEY, A.GEN_FIELD = "MidiControlCenter", "model_gen"
 A.HELGOBOX_NAME = "Helgobox - ReaLearn & Playtime"
 A.RESYNC_CMD  = "_REALEARN_SEND_ALL_FEEDBACK"
 
@@ -69,6 +72,14 @@ function A.send_all_feedback()
     return false
 end
 
+-- REAPER input device number by exact name, or nil
+function A.device_by_name(name)
+    for i = 0, reaper.GetNumMIDIInputs() - 1 do
+        local ok, n = reaper.GetMIDIInputNameNoAlias(i, "")
+        if ok and n == name then return i end
+    end
+end
+
 -- current device number of the port-1 input (for drum injection / watcher echoes)
 function A.port1_device()
     for i = 0, reaper.GetNumMIDIInputs() - 1 do
@@ -105,9 +116,25 @@ function A.apply(model, opts)
         write_file(A.EXQUIS_PRESET, xtext)
         exquis_note = string.format(" + Exquis %d mappings", #xpreset.mappings)
     end
+    local sdp_note = ""
+    if type(model.sdp120) == "table" and model.sdp120.enabled then
+        local dev2 = A.device_by_name(model.sdp120.input_name or "")
+        if dev2 then model.sdp120.input_device = dev2 end
+        local stext = generator.generate_sdp120(model, { author = opts.author or "MIDI Control Center" })
+        local spreset, serr = generator.evaluate(stext)
+        if not spreset then return false, "generated SDP-120 preset does not run: " .. tostring(serr) end
+        reaper.RecursiveCreateDirectory(A.SDP120_DIR, 0)
+        local scur = read_file(A.SDP120_PRESET)
+        if scur then write_file(A.SDP120_DIR .. "/filter.preset." .. os.date("%Y%m%d-%H%M%S") .. ".bak", scur) end
+        write_file(A.SDP120_PRESET, stext)
+        model_mod.save(model, A.MODEL_PATH)
+        sdp_note = string.format(" + SDP-120 %d mappings", #spreset.mappings)
+    end
+    -- tell the watcher (number entry) that model.json changed
+    reaper.SetExtState(A.GEN_KEY, A.GEN_FIELD, tostring(os.time()) .. "-" .. tostring(math.random(1000000)), false)
     local rl_ok, rl_err = A.reload_instance()
     A.send_all_feedback()
-    local msg = string.format("wrote %d mappings to live.preset.luau", #preset.mappings) .. exquis_note
+    local msg = string.format("wrote %d mappings to live.preset.luau", #preset.mappings) .. exquis_note .. sdp_note
     if rl_ok then msg = msg .. "; ReaLearn reloaded" else msg = msg .. "; restart REAPER to load it (" .. tostring(rl_err) .. ")" end
     return true, msg, rl_ok
 end
@@ -115,7 +142,7 @@ end
 function A.load_model()
     if file_exists(A.MODEL_PATH) then
         local m, err = model_mod.load(A.MODEL_PATH)
-        if m then return m, "model.json" end
+        if m then return model_mod.sdp120_migrate(m), "model.json" end
         return model_mod.default(), "model.json unreadable (" .. tostring(err) .. "), using default"
     end
     return model_mod.default(), "default (hand-built layout)"

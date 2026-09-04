@@ -41,6 +41,15 @@ local PAD_NOTE = { 40, 41, 42, 43, 48, 49, 50, 51, 36, 37, 38, 39, 44, 45, 46, 4
 
 local function log(s) reaper.ShowConsoleMsg("[oxygen] " .. s .. "\n") end
 
+-- SDP-120 number entry: the piano's ReaLearn unit echoes typed tone numbers as a CC; this module performs them
+local SDP = nil
+do
+  package.path = reaper.GetResourcePath() .. "/Scripts/MIDI Control Center/midi_control_center/?.lua;" .. package.path
+  local ok, mod = pcall(require, "sdp120_numbers")
+  if ok then SDP = mod; local loaded, why = SDP.load(); log(loaded and "SDP-120 number entry armed" or ("SDP-120 number entry off (" .. tostring(why) .. ")"))
+  else log("sdp120_numbers module not loaded: " .. tostring(mod)) end
+end
+
 -- only one watcher at a time: starting a newer copy (after editing this file) retires the running one
 local GEN_KEY = "OxygenPro61Watcher"
 local my_gen = (tonumber(reaper.GetExtState(GEN_KEY, "gen")) or 0) + 1
@@ -193,6 +202,8 @@ local function poll_layout_button(now)
       elseif status == 0xB0 and d1 == BACK_CC then
         if d2 > 0 then paint_back_layer(now); log("Back layer armed")
         else repaint(now); log("Back layer dropped") end
+      elseif SDP and SDP.handle(status, d1, d2) then
+        -- SDP-120 number echo performed
       elseif status == 0xB0 and (d1 == BANK_CC_DOWN or d1 == BANK_CC_UP) and d2 > 0 then
         bank = math.max(0, math.min(3, bank + (d1 == BANK_CC_UP and 1 or -1)))
         flash_bank(now)
@@ -219,6 +230,7 @@ local function tick()
     present = now_present
     if present then out_idx = idx end
   end
+  if SDP then SDP.reload_if_changed() end
   poll_layout_button(now)
   exquis_repaint(now)
   while #queue > 0 and now >= queue[1].at do

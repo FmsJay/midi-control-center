@@ -227,6 +227,87 @@ end
 local function is_command_value(v)
     return (type(v) == "number" and v > 0) or (type(v) == "string" and v:match("^_[%w_]+$") ~= nil)
 end
+-- ---- Strich SDP-120 digital piano (REAPER device "General MIDI") ----------------------------------------
+-- Its panel is a poor control surface (measured 2026-09-04, docs/SDP120.md) but three things are usable:
+-- the tone-number entry (program change 0..127 on channel 1 = display 001..128; higher numbers alias),
+-- the SUSTAIN button (CC 64 = 100, the pedal sends 64) and the split / dual voice switches (program changes
+-- on channels 16 / 6). Everything else it sprays (keep-alive sysex, metronome, rhythms, demos, GS sysex) is
+-- swallowed by the same ReaLearn unit so tracks only ever see keys and pedals.
+M.SDP120_FILTER_FLAGS = {
+    { id = "keepalive",    name = "Keep-alive sysex (F0 33 00 F7, once a second)" },
+    { id = "metronome",    name = "Metronome clicks (notes 75 / 76 on channel 10)" },
+    { id = "rhythm",       name = "Rhythms and demo songs (channel 10 drums, parts on channels 2-5 and 7-15)" },
+    { id = "gs_sysex",     name = "Roland GS sysex (reverb / chorus changes)" },
+    { id = "panel_noise",  name = "Panel resets on the part channels (CC 0 / 6 / 10 / 64 / 66 / 67 / 91 / 93 / 100 / 101)" },
+    { id = "tone_changes", name = "Tone changes (bank + program change on channels 1 and 2; needed for the number entry)" },
+    { id = "pedal_dupes",  name = "Pedal duplicates on channels 6 and 16 (keep them for split / dual voices)" },
+}
+M.SDP120_NUMBER_KINDS = {
+    { id = "none",   name = "Nothing" },
+    { id = "fx",     name = "Add an FX to a track" },
+    { id = "action", name = "REAPER action" },
+}
+M.SDP120_TRACK_TARGETS = {
+    { id = "selected", name = "Selected track (first selected)" },
+    { id = "new",      name = "A new track at the end" },
+    { id = "first",    name = "Track 1" },
+}
+M.SDP120_TRIGGERS = {
+    { id = "split_voice",    name = "Split voice change", hint = "program change on channel 16: SPLIT switched on, or a tone chosen while split is on" },
+    { id = "dual_voice",     name = "Dual voice change", hint = "program change on channel 6: dual switched on, or a tone chosen while dual is on" },
+}
+M.SDP120_MAX_NUMBER = 128
+function M.sdp120_default()
+    return {
+        enabled = false,                 -- the first-time setup turns it on when a device named input_name exists
+        input_name = "General MIDI",
+        input_device = 10,               -- resolved from input_name at apply time
+        echo_cc = 20, echo_channel = 13, -- the number echo: CC 20 on channel 14, injected into the piano's own input
+        filter = { keepalive = true, metronome = true, rhythm = true, gs_sysex = true, panel_noise = true, tone_changes = true, pedal_dupes = false },
+        numbers = {},                    -- { number = 1..128, kind = "fx"|"action"|"none", fx = "ReaEQ", track = "selected"|"new"|"first", show = true, reuse = false, command = 40001 }
+        triggers = { split_voice = { kind = "none" }, dual_voice = { kind = "none" } },   -- the SUSTAIN button is deliberately not offered: it latches the piano's own sustain
+    }
+end
+-- older saved models have no sdp120 section
+function M.sdp120_migrate(model)
+    if type(model) == "table" and type(model.sdp120) ~= "table" then model.sdp120 = M.sdp120_default() end
+    return model
+end
+function M.validate_sdp120(x, errors)
+    if x == nil then return end
+    if type(x) ~= "table" then errors[#errors + 1] = "sdp120 must be a table"; return end
+    if type(x.input_name) ~= "string" or x.input_name == "" then errors[#errors + 1] = "sdp120.input_name required" end
+    if type(x.input_device) ~= "number" then errors[#errors + 1] = "sdp120.input_device must be a number" end
+    if type(x.echo_cc) ~= "number" or x.echo_cc < 0 or x.echo_cc > 127 then errors[#errors + 1] = "sdp120.echo_cc must be 0-127" end
+    if type(x.echo_channel) ~= "number" or x.echo_channel < 0 or x.echo_channel > 15 then errors[#errors + 1] = "sdp120.echo_channel must be 0-15" end
+    if type(x.filter) ~= "table" then errors[#errors + 1] = "sdp120.filter must be a table" end
+    local seen = {}
+    for i, e in ipairs(x.numbers or {}) do
+        local where = "sdp120.numbers[" .. i .. "]"
+        if type(e) ~= "table" then errors[#errors + 1] = where .. ": must be a table"
+        else
+            local n = e.number
+            if type(n) ~= "number" or n ~= math.floor(n) or n < 1 or n > M.SDP120_MAX_NUMBER then errors[#errors + 1] = where .. ": number must be 1-" .. M.SDP120_MAX_NUMBER
+            elseif seen[n] then errors[#errors + 1] = where .. ": number " .. n .. " assigned twice"
+            else seen[n] = true end
+            if e.kind == "fx" then
+                if type(e.fx) ~= "string" or e.fx == "" then errors[#errors + 1] = where .. ": fx name required" end
+                local ok = false
+                for _, t in ipairs(M.SDP120_TRACK_TARGETS) do if t.id == (e.track or "selected") then ok = true end end
+                if not ok then errors[#errors + 1] = where .. ": unknown track target" end
+            elseif e.kind == "action" then
+                if not is_command_value(e.command) then errors[#errors + 1] = where .. ": command must be a positive integer or a _NAMED command" end
+            elseif e.kind ~= "none" and e.kind ~= nil then errors[#errors + 1] = where .. ": unknown kind '" .. tostring(e.kind) .. "'" end
+        end
+    end
+    for _, t in ipairs(M.SDP120_TRIGGERS) do
+        local a = (x.triggers or {})[t.id]
+        if a ~= nil and type(a) ~= "table" then errors[#errors + 1] = "sdp120.triggers." .. t.id .. ": must be a table"
+        elseif a and a.kind == "action" and not is_command_value(a.command) then errors[#errors + 1] = "sdp120.triggers." .. t.id .. ": command required"
+        elseif a and a.kind ~= nil and a.kind ~= "none" and a.kind ~= "action" then errors[#errors + 1] = "sdp120.triggers." .. t.id .. ": unknown kind" end
+    end
+end
+
 function M.validate_exquis(x, errors)
     if x == nil then return end
     if type(x) ~= "table" then errors[#errors + 1] = "exquis must be a table"; return end
@@ -307,6 +388,7 @@ function M.default()
         port1_input_device = 14,
         off_mode_local_leds = true,   -- Off mode: LEDs 1-4 show the keyboard's ARP / Latch / Chord / Scale toggles
         exquis = M.exquis_default(),  -- optional second surface, off until enabled
+        sdp120 = M.sdp120_default(),
         layouts = {
             { id = "general", name = "General DAW", sweep_colour = "green",
               pad_modes = {
@@ -478,6 +560,7 @@ function M.validate(model)
     end
     if modifier_count > 2 then errors[#errors + 1] = "at most two modifiers in total (ReaLearn conditions take two modifiers)" end
     M.validate_exquis(model.exquis, errors)
+    M.validate_sdp120(model.sdp120, errors)
     if type(model.port1_input_device) ~= "number" then errors[#errors + 1] = "port1_input_device must be a number" end
     return errors
 end

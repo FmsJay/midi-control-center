@@ -80,7 +80,7 @@ local EXQUIS_PUSH_SHORT = { none = '-', selected_mute = 'Sel mute', selected_sol
 local EXQUIS_ELEM = {}      -- button id -> element / CC number
 for _, b in ipairs(M.EXQUIS_BUTTONS) do EXQUIS_ELEM[b.id] = b.elem end
 local EXQUIS_ENC_CC, EXQUIS_PUSH_CC, EXQUIS_SLIDER_CC = { 110, 111, 112, 113 }, { 114, 115, 116, 117 }, { 80, 81, 82, 83, 84, 85 }
-local DEVICES = { { id = 'oxygen', name = 'Oxygen Pro 61' }, { id = 'exquis', name = 'Exquis' } }
+local DEVICES = { { id = 'oxygen', name = 'Oxygen Pro 61' }, { id = 'exquis', name = 'Exquis' }, { id = 'sdp120', name = 'SDP-120' } }
 local EXQUIS_LAYERS = { { id = 'normal', name = 'Normal' }, { id = 'shift', name = 'Shift (FCB1010 held)' } }
 local EXQUIS_HINT = 'off = no Exquis preset is written; needs the Exquis unit from the first-time setup and firmware 2.1+'
 
@@ -107,6 +107,7 @@ XQ.KEY_OFF = 0x2A2B31FF
 -- ================================================================================================
 local model, model_source = apply.load_model()
 if type(model) == 'table' and type(model.exquis) == 'table' then M.exquis_migrate(model.exquis) end   -- flat Exquis -> modes[1]
+if type(model) == 'table' then M.sdp120_migrate(model) end                                          -- older models lack sdp120
 local errors = M.validate(model)
 local status = { text = 'Loaded ' .. tostring(model_source), col = nil }
 local undo_stack, redo_stack = {}, {}
@@ -117,10 +118,11 @@ local sel  = { kind = nil }      -- button{id} | encoder | pad{k} | bank{sub,i} 
 local view = { layout = 1, mode = 1, bank = 1, layer = 'normal', follow = false, fb_mode = 0, knob_fn = 0,
                zoom = tonumber(reaper.GetExtState(EXT, 'zoom')) or 1.0,
                show_modifiers = false,    -- "Modifiers..." management section at the top of the inspector
-               device = reaper.GetExtState(EXT, 'device') == 'exquis' and 'exquis' or 'oxygen',   -- Device switch
+               device = (function() local d = reaper.GetExtState(EXT, 'device'); return (d == 'exquis' or d == 'sdp120') and d or 'oxygen' end)(),   -- Device switch
                xlayer = 'normal',         -- Exquis layer being edited: 'normal' | 'shift'
                xmode = 1,                 -- Exquis mode being edited: index into model.exquis.modes (1-based, clamped)
-               show_xmode = false }       -- "Mode settings" section (name / colour) at the top of the Exquis inspector
+               show_xmode = false,        -- "Mode settings" section (name / colour) at the top of the Exquis inspector
+               sdp_sel = nil }            -- SDP-120: index of the selected number entry in model.sdp120.numbers (nil = none)
 local live = nil                 -- last state.read()
 local picker = { active = false, uid = nil, resolver = nil, field = nil }
 local last_error = nil
@@ -129,7 +131,7 @@ local last_action = nil
 local pending_dock = tonumber(reaper.GetExtState(EXT, 'dock'))
 if pending_dock == 0 then pending_dock = nil end
 local name_cache = {}
-local stk = { child = 0, combo = 0, col = 0, id = 0, disabled = 0 }   -- open Begin*/Push* for error recovery
+local stk = { child = 0, combo = 0, col = 0, id = 0, disabled = 0, popup = 0, pchild = 0 }   -- open Begin*/Push* for error recovery (pchild = children inside a popup)
 
 -- Exquis keyboard I/O: live device settings, never part of the model (no undo). One query at a time, polled from
 -- frame() each cycle: pending = 'snapshot' | 'root' | 'scale' | nil, queue = the queries still to send, done = callback.
@@ -508,10 +510,23 @@ end
 -- ================================================================================================
 local function begin_child(id, w, h, cflags, wflags)
   local vis = ImGui.BeginChild(ctx, id, w or 0, h or 0, cflags or ImGui.ChildFlags_None, wflags or ImGui.WindowFlags_None)
-  if vis then stk.child = stk.child + 1 end
+  if vis then
+    stk.child = stk.child + 1
+    if stk.popup > 0 then stk.pchild = stk.pchild + 1 end   -- a child inside an open popup closes before the popup
+  end
   return vis
 end
-local function end_child() ImGui.EndChild(ctx); stk.child = stk.child - 1 end
+local function end_child()
+  ImGui.EndChild(ctx); stk.child = stk.child - 1
+  if stk.popup > 0 and stk.pchild > 0 then stk.pchild = stk.pchild - 1 end
+end
+-- popups (BeginPopup only opens after OpenPopup; EndPopup only when it returned true), tracked like children
+local function begin_popup(id, flags)
+  local vis = ImGui.BeginPopup(ctx, id, flags or ImGui.WindowFlags_None)
+  if vis then stk.popup = stk.popup + 1 end
+  return vis
+end
+local function end_popup() ImGui.EndPopup(ctx); stk.popup = stk.popup - 1 end
 local function push_id(s) ImGui.PushID(ctx, s); stk.id = stk.id + 1 end
 local function pop_id() ImGui.PopID(ctx); stk.id = stk.id - 1 end
 local function push_col(idx, col) ImGui.PushStyleColor(ctx, idx, col); stk.col = stk.col + 1 end
@@ -525,6 +540,10 @@ local function end_disabled() ImGui.EndDisabled(ctx); stk.disabled = stk.disable
 local function unwind()
   while (stk.wrap or 0) > 0 do ImGui.PopTextWrapPos(ctx); stk.wrap = stk.wrap - 1 end
   while stk.combo > 0 do ImGui.EndCombo(ctx); stk.combo = stk.combo - 1 end
+  while stk.popup > 0 do   -- a popup (and the child it may hold) closes before the window it was opened from
+    while stk.pchild > 0 do ImGui.EndChild(ctx); stk.child = stk.child - 1; stk.pchild = stk.pchild - 1 end
+    ImGui.EndPopup(ctx); stk.popup = stk.popup - 1
+  end
   while stk.disabled > 0 do ImGui.EndDisabled(ctx); stk.disabled = stk.disabled - 1 end
   while stk.id > 0 do ImGui.PopID(ctx); stk.id = stk.id - 1 end
   if stk.col > 0 then ImGui.PopStyleColor(ctx, stk.col); stk.col = 0 end
@@ -1079,6 +1098,206 @@ function XQ.display()
 end
 
 -- ================================================================================================
+-- 6c. Strich SDP-120 digital piano: section access, device check, installed-FX list, number entries
+-- ================================================================================================
+-- model.sdp120 = { enabled, input_name, input_device, echo_cc, echo_channel, filter = { flag = bool }, numbers = { { number,
+-- kind, fx, track, show, reuse, command } ... }, triggers = { split_voice | dual_voice = { kind, command } } }. The panel is
+-- plain widgets (no drawing); one table holds the constants and helpers (the chunk is near Lua's 200-locals limit, see XQ)
+local SDP = {}
+SDP.HINT = 'off = no SDP-120 preset is written on Apply; on = the filter / number-entry unit for the piano\'s device is generated and reloaded'
+SDP.TRIGGER_KINDS = { { id = 'none', name = 'Nothing' }, { id = 'action', name = 'REAPER action' } }
+SDP.COL_WHAT, SDP.COL_TARGET, SDP.COL_TRIGGER = 74, 250, 180   -- window-relative x of the list columns / the trigger combos
+SDP.fx = nil                       -- installed FX names (reaper.EnumInstalledFX), cached once per session ("Rescan" drops it)
+SDP.fx_w = 0                       -- widest name, sizes the popup
+SDP.fx_filter, SDP.fx_focus = '', false
+SDP.checked, SDP.checked_name, SDP.has_in, SDP.in_index = -1, nil, false, nil
+SDP.num_err, SDP.num_err_idx = nil, nil   -- refused Number edit, shown in red under the field of that entry
+
+-- the section, created / completed on demand (older models lack it; every sub-table nil-safe)
+function SDP.section()
+  M.sdp120_migrate(model)
+  local x = model.sdp120
+  if type(x.filter) ~= 'table' then x.filter = {} end
+  if type(x.numbers) ~= 'table' then x.numbers = {} end
+  if type(x.triggers) ~= 'table' then x.triggers = {} end
+  if type(x.input_name) ~= 'string' then x.input_name = 'General MIDI' end
+  return x
+end
+-- the assignment table of panel trigger `id` (created as "none")
+function SDP.trigger(id)
+  local x = SDP.section()
+  if type(x.triggers[id]) ~= 'table' then x.triggers[id] = { kind = 'none' } end
+  return x.triggers[id]
+end
+-- the selected number entry: index, entry (nil, nil when nothing valid is selected; the stale index is cleared)
+function SDP.selected()
+  local x = SDP.section()
+  local i = math.floor(tonumber(view.sdp_sel) or 0)
+  local e = i >= 1 and x.numbers[i] or nil
+  if type(e) ~= 'table' then view.sdp_sel = nil; return nil, nil end
+  return i, e
+end
+
+-- once a second: is there a REAPER MIDI input named exactly `name` right now?
+function SDP.refresh(name)
+  local now = reaper.time_precise()
+  if name == SDP.checked_name and now - SDP.checked < 1.0 then return end
+  SDP.checked, SDP.checked_name, SDP.has_in, SDP.in_index = now, name, false, nil
+  for i = 0, reaper.GetNumMIDIInputs() - 1 do
+    local ok, n = reaper.GetMIDIInputNameNoAlias(i, '')
+    if ok and n == name then SDP.has_in, SDP.in_index = true, i; break end
+  end
+end
+
+-- installed FX as REAPER names them ("VST3: ReaEQ (Cockos)", "JS: ..."): the names TrackFX_AddByName accepts
+function SDP.fx_list()
+  if SDP.fx then return SDP.fx end
+  local list, widest = {}, 0
+  if reaper.EnumInstalledFX then
+    for i = 0, 20000 do
+      local ok, name = reaper.EnumInstalledFX(i)
+      if not ok then break end
+      if type(name) == 'string' and name ~= '' then
+        list[#list + 1] = name
+        local w = ImGui.CalcTextSize(ctx, name)
+        if w > widest then widest = w end
+      end
+    end
+    table.sort(list, function(a, b) return a:lower() < b:lower() end)
+  end
+  SDP.fx, SDP.fx_w = list, widest
+  return list
+end
+
+-- ---- text ---------------------------------------------------------------------------------------
+-- wrapped text in a colour; TextWrapped keeps its own wrap stack, so this is safe inside any child
+function SDP.wrapped(text, col)
+  if col then push_col(ImGui.Col_Text, col) end
+  ImGui.TextWrapped(ctx, text)
+  if col then pop_col() end
+end
+-- wrapped text at the current (SameLine) position whose later lines start under its first line instead of at the
+-- window edge; `base` = GetCursorPosX taken at the start of the line
+function SDP.text_at(base, text, col)
+  local delta = ImGui.GetCursorPosX(ctx) - base
+  if delta > 0 then ImGui.Indent(ctx, delta) end
+  SDP.wrapped(text, col)
+  if delta > 0 then ImGui.Unindent(ctx, delta) end
+end
+-- checkbox with a wrapping label (a Checkbox's own label never wraps); returns changed, value
+function SDP.check(uid, text, value)
+  local base = ImGui.GetCursorPosX(ctx)
+  local rv, nv = ImGui.Checkbox(ctx, '##' .. uid, value)
+  ImGui.SameLine(ctx)
+  SDP.text_at(base, text)
+  return rv and nv ~= value, nv
+end
+-- list columns of a number entry: what, target
+function SDP.entry_text(e)
+  local kind = e.kind or 'none'
+  if kind == 'fx' then
+    local fx = (type(e.fx) == 'string' and e.fx ~= '') and e.fx or '(no FX name)'
+    return name_of(M.SDP120_NUMBER_KINDS, 'fx'), fx .. '  ->  ' .. name_of(M.SDP120_TRACK_TARGETS, e.track or 'selected')
+  elseif kind == 'action' then
+    local c = e.command
+    return name_of(M.SDP120_NUMBER_KINDS, 'action'), (c == nil or c == 0 or c == '') and '(no action picked)' or command_text(c, true)
+  end
+  return name_of(M.SDP120_NUMBER_KINDS, kind), '-'
+end
+-- action of a number entry / trigger: "Pick..." (REAPER's Actions window), then the command with its name
+function SDP.command_row(uid, resolver)
+  local t = resolver()
+  if type(t) ~= 'table' then return end
+  push_id(uid)
+  local base = ImGui.GetCursorPosX(ctx)
+  if ImGui.Button(ctx, 'Pick...') then picker_start(uid, resolver, 'command') end
+  ImGui.SetItemTooltip(ctx, 'Choose the action in REAPER\'s Actions window and press its Select button')
+  ImGui.SameLine(ctx)
+  local cmd = t.command
+  if picker.active and picker.uid == uid then SDP.text_at(base, 'waiting for the Actions window...', C.live)
+  elseif cmd == nil or cmd == 0 or cmd == '' then SDP.text_at(base, 'no action picked yet', C.err)
+  elseif action_name(cmd) == '' then SDP.text_at(base, command_text(cmd, true) .. '  (unknown action in this REAPER)', C.err)
+  else SDP.text_at(base, command_text(cmd, true)) end
+  pop_id()
+end
+
+-- ---- number entries ---------------------------------------------------------------------------------
+-- lowest tone number (1..128) no entry uses, or nil when all are taken
+function SDP.free_number(x)
+  local used = {}
+  for _, e in ipairs(x.numbers) do
+    if type(e) == 'table' and tonumber(e.number) then used[math.floor(tonumber(e.number))] = true end
+  end
+  for n = 1, M.SDP120_MAX_NUMBER do if not used[n] then return n end end
+  return nil
+end
+-- index of another entry (not `except`) that already uses number n, or nil
+function SDP.number_owner(x, n, except)
+  for i, e in ipairs(x.numbers) do
+    if i ~= except and type(e) == 'table' and tonumber(e.number) == n then return i end
+  end
+  return nil
+end
+function SDP.add_number()
+  local x = SDP.section()
+  local n = SDP.free_number(x)
+  if not n then status.text, status.col = string.format('All %d tone numbers are assigned', M.SDP120_MAX_NUMBER), C.err; return end
+  push_undo()
+  x.numbers[#x.numbers + 1] = { number = n, kind = 'fx', fx = '', track = 'selected', show = true, reuse = false }
+  view.sdp_sel = #x.numbers
+  after_edit(string.format('Added number %03d: give it an FX name in the inspector', n))
+end
+function SDP.remove_number()
+  local x = SDP.section()
+  local i, e = SDP.selected()
+  if not i then return end
+  push_undo()
+  table.remove(x.numbers, i)
+  view.sdp_sel = nil
+  after_edit(string.format('Removed number %03d', math.floor(tonumber(e.number) or 0)))
+end
+
+-- "Choose FX..." popup (opened by the inspector): filter box + the installed FX; a click writes the name into entry idx
+function SDP.fx_popup(idx)
+  if not begin_popup('sdp_fxpick') then return end
+  local list = SDP.fx_list()
+  local w = math.max(420, math.min(SDP.fx_w + 60, 900))
+  if #list > 0 then ImGui.Text(ctx, string.format('%d installed FX', #list))
+  elseif reaper.EnumInstalledFX then ImGui.TextColored(ctx, C.err, 'REAPER reports no installed FX (Preferences > Plug-ins: re-scan)')
+  else ImGui.TextColored(ctx, C.err, 'reaper.EnumInstalledFX is missing (REAPER 6.37 or newer needed): type the name instead') end
+  ImGui.SameLine(ctx)
+  if ImGui.SmallButton(ctx, 'Rescan') then SDP.fx = nil; list = SDP.fx_list() end
+  ImGui.SetItemTooltip(ctx, 'Re-read the list (REAPER itself must have scanned a new plugin first)')
+  if SDP.fx_focus then ImGui.SetKeyboardFocusHere(ctx); SDP.fx_focus = false end
+  ImGui.SetNextItemWidth(ctx, w)
+  local rv, nf = ImGui.InputTextWithHint(ctx, '##sdpfxfilter', 'filter: words in any order, e.g. "vst3 eq"', SDP.fx_filter or '')
+  if rv then SDP.fx_filter = nf end
+  local words = {}
+  for wd in (SDP.fx_filter or ''):lower():gmatch('%S+') do words[#words + 1] = wd end
+  if begin_child('sdp_fxlist', w, 320, ImGui.ChildFlags_Borders) then
+    local shown, hidden = 0, 0
+    for i, name in ipairs(list) do
+      local l, ok = name:lower(), true
+      for _, wd in ipairs(words) do if not l:find(wd, 1, true) then ok = false; break end end
+      if ok then
+        if shown < 400 then
+          shown = shown + 1
+          if ImGui.Selectable(ctx, name .. '##fx' .. i, false) then
+            local e = SDP.section().numbers[idx]
+            if type(e) == 'table' then push_undo(); e.fx = name; after_edit('FX name: ' .. name) end
+            ImGui.CloseCurrentPopup(ctx)
+          end
+        else hidden = hidden + 1 end
+      end
+    end
+    if shown == 0 then ImGui.TextDisabled(ctx, 'nothing matches the filter') end
+    if hidden > 0 then ImGui.TextDisabled(ctx, string.format('... and %d more: narrow the filter', hidden)) end
+    end_child()
+  end
+  end_popup()
+end
+
+-- ================================================================================================
 -- 7. Top bar
 -- ================================================================================================
 local function do_apply()
@@ -1097,14 +1316,16 @@ local function do_reload()
   local m, src = apply.load_model()
   model = m; name_cache = {}
   if type(model.exquis) == 'table' then M.exquis_migrate(model.exquis) end
-  view.xmode = 1
+  M.sdp120_migrate(model)
+  view.xmode, view.sdp_sel = 1, nil
   after_edit('Reloaded ' .. tostring(src))
 end
 local function do_reset()
   push_undo()
   model = M.default()
   if type(model.exquis) == 'table' then M.exquis_migrate(model.exquis) end
-  view.xmode = 1
+  M.sdp120_migrate(model)
+  view.xmode, view.sdp_sel = 1, nil
   after_edit('Reset to the shipped default layout')
 end
 
@@ -1267,9 +1488,37 @@ local function draw_topbar_exquis()
   ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
 end
 
+-- SDP-120 rows of the top bar (enabled + input device name + presence check, then a reminder line); ends with SameLine like the others
+local function draw_topbar_sdp120()
+  local x = SDP.section()
+  -- row 1: enabled + input device
+  local rv, ne = ImGui.Checkbox(ctx, 'SDP-120 enabled', x.enabled == true)
+  if rv and ne ~= (x.enabled == true) then
+    push_undo(); x.enabled = ne
+    after_edit(ne and 'SDP-120 section enabled (filter / number-entry unit written on Apply)' or 'SDP-120 section disabled (no SDP-120 preset is written)')
+  end
+  ImGui.SetItemTooltip(ctx, SDP.HINT)
+  ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+  ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Input device:'); ImGui.SameLine(ctx)
+  text_field('sdpin', '##sdpin', x, 'input_name', 200)
+  ImGui.SetItemTooltip(ctx, 'model.sdp120.input_name: the piano\'s REAPER MIDI input, spelled exactly as Preferences > MIDI Devices lists it ("General MIDI" for the SDP-120)')
+  ImGui.SameLine(ctx)
+  SDP.refresh(x.input_name)
+  if SDP.has_in then ImGui.TextColored(ctx, C.ok, string.format('input found (REAPER device %d)', SDP.in_index or -1))
+  else ImGui.TextColored(ctx, C.err, 'no MIDI input with exactly this name right now') end
+  ImGui.SetItemTooltip(ctx, 'Checked once a second (reaper.GetMIDIInputNameNoAlias); enable the piano in Preferences > MIDI Devices if it is missing')
+  -- row 2: reminder, then the shared Apply / Save / Reload / Undo buttons
+  ImGui.AlignTextToFramePadding(ctx)
+  ImGui.TextDisabled(ctx, string.format('Number echo: CC %d on MIDI channel %d, injected into the piano\'s own input for the live watcher',
+    math.floor(tonumber(x.echo_cc) or 20), math.floor(tonumber(x.echo_channel) or 13) + 1))
+  ImGui.SameLine(ctx); ImGui.Dummy(ctx, 12, 0); ImGui.SameLine(ctx)
+end
+
 local function draw_topbar()
   draw_device_switch()
-  if view.device == 'exquis' then draw_topbar_exquis() else draw_topbar_oxygen() end
+  if view.device == 'exquis' then draw_topbar_exquis()
+  elseif view.device == 'sdp120' then draw_topbar_sdp120()
+  else draw_topbar_oxygen() end
 
   if (function() local r = ImGui.Button(ctx, 'Apply'); if r then last_action = 'Apply' end; return r end)() and not apply_running then apply_running = true; pending_apply = true end
   ImGui.SetItemTooltip(ctx, 'Generate the preset, back up the current one, write it and reload ReaLearn')
@@ -1299,6 +1548,11 @@ local function draw_topbar()
     ImGui.SameLine(ctx); ImGui.TextColored(ctx, C.ok, '  |  Exquis section: enabled')
   elseif view.device == 'exquis' then
     ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, '  |  Exquis section: off (no Exquis preset is written)')
+  end
+  if type(model.sdp120) == 'table' and model.sdp120.enabled then
+    ImGui.SameLine(ctx); ImGui.TextColored(ctx, C.ok, '  |  SDP-120 section: enabled')
+  elseif view.device == 'sdp120' then
+    ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, '  |  SDP-120 section: off (no SDP-120 preset is written)')
   end
   if last_error then
     ImGui.TextColored(ctx, C.err, 'Script error: ' .. tostring(last_error)); ImGui.SameLine(ctx)
@@ -1731,6 +1985,99 @@ local function draw_exquis_panel()
 
   ImGui.SetCursorScreenPos(ctx, G.ox, G.oy)
   ImGui.Dummy(ctx, EXQ_W * G.z, EXQ_H * G.z)
+end
+
+-- ---- SDP-120 panel: filter flags, panel triggers, number entry list (plain widgets, no drawing) -------------
+local function draw_sdp120_panel()
+  local x = SDP.section()
+  push_id('sdp')
+  ImGui.Text(ctx, 'STRICH   SDP-120 digital piano'); ImGui.SameLine(ctx)
+  ImGui.TextDisabled(ctx, '   REAPER device "' .. tostring(x.input_name) .. '"')
+  if not x.enabled then
+    SDP.wrapped('Section disabled: no SDP-120 preset is written on Apply (tick "SDP-120 enabled" in the top bar to edit and apply it)', C.err)
+  end
+  begin_disabled(not x.enabled)
+
+  -- filter: one flag per class of unwanted message
+  ImGui.SeparatorText(ctx, 'Filter  (swallowed by the ReaLearn unit before any track hears it)')
+  for _, f in ipairs(M.SDP120_FILTER_FLAGS) do
+    local cur = x.filter[f.id] == true
+    local ch, nv = SDP.check('flt_' .. f.id, f.name, cur)
+    if ch then push_undo(); x.filter[f.id] = nv; after_edit(string.format('Filter %s: %s', f.id, nv and 'swallowed' or 'passed through')) end
+  end
+  SDP.wrapped('Channel 1 (keys), 6 (dual layer) and 16 (split half, tone changes) always pass. DRUM mode plays on channel 10: untick the metronome and rhythm flags to record it.', C.muted)
+
+  -- panel triggers: what the split / dual voice switches fire
+  ImGui.SeparatorText(ctx, 'Panel triggers')
+  for _, t in ipairs(M.SDP120_TRIGGERS) do
+    push_id('trg_' .. t.id)
+    local a = SDP.trigger(t.id)
+    local base = ImGui.GetCursorPosX(ctx)
+    ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, t.name)
+    ImGui.SameLine(ctx, SDP.COL_TRIGGER)
+    local delta = ImGui.GetCursorPosX(ctx) - base
+    local pick = combo_ids('##kind', SDP.TRIGGER_KINDS, a.kind or 'none', 150)
+    if pick and pick ~= (a.kind or 'none') then
+      push_undo()
+      if pick == 'action' then set_table(a, { kind = 'action', command = a.command or 0 }) else set_table(a, { kind = 'none' }) end
+      after_edit()
+    end
+    if delta > 0 then ImGui.Indent(ctx, delta) end
+    if a.kind == 'action' then SDP.command_row('sdptrg_' .. t.id, function() return SDP.trigger(t.id) end) end
+    SDP.wrapped(t.hint, C.muted)
+    if delta > 0 then ImGui.Unindent(ctx, delta) end
+    pop_id()
+  end
+
+  -- number entry: the tone number typed on the piano
+  ImGui.SeparatorText(ctx, 'Number entry')
+  SDP.wrapped(string.format('Typing a tone number on the piano (display 001-%d; higher numbers alias onto them, 129 = 001) sends it to REAPER as CC %d on channel %d, and the live watcher runs the entry assigned to that number. Numbers without an entry only change the piano\'s tone.',
+    M.SDP120_MAX_NUMBER, math.floor(tonumber(x.echo_cc) or 20), math.floor(tonumber(x.echo_channel) or 13) + 1))
+  if ImGui.Button(ctx, 'Add number...') then SDP.add_number() end
+  ImGui.SetItemTooltip(ctx, 'Add an entry with the lowest free number (kind: add an FX) and select it for the inspector')
+  ImGui.SameLine(ctx)
+  local si = SDP.selected()
+  begin_disabled(si == nil)
+  if ImGui.Button(ctx, 'Remove') then SDP.remove_number() end
+  end_disabled()
+  ImGui.SetItemTooltip(ctx, 'Remove the selected entry')
+  ImGui.SameLine(ctx)
+  ImGui.AlignTextToFramePadding(ctx)
+  ImGui.TextDisabled(ctx, string.format('%d of %d numbers assigned', #x.numbers, M.SDP120_MAX_NUMBER))
+  -- header, aligned with the columns of the bordered child below (which adds the window padding)
+  local pad = ImGui.GetCursorPosX(ctx) - ImGui.GetScrollX(ctx)
+  local wpad = ImGui.GetStyleVar(ctx, ImGui.StyleVar_WindowPadding)
+  ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + wpad); ImGui.TextDisabled(ctx, 'Number')
+  ImGui.SameLine(ctx, pad + SDP.COL_WHAT); ImGui.TextDisabled(ctx, 'What')
+  ImGui.SameLine(ctx, pad + SDP.COL_TARGET); ImGui.TextDisabled(ctx, 'Target')
+  -- rows sorted by number, in a scrolling child (up to 128 entries); a row's height follows its wrapped target text
+  if begin_child('sdp_numbers', 0, 0, ImGui.ChildFlags_Borders) then
+    local order = {}
+    for i, e in ipairs(x.numbers) do if type(e) == 'table' then order[#order + 1] = i end end
+    table.sort(order, function(a, b)
+      local na, nb = tonumber(x.numbers[a].number) or 0, tonumber(x.numbers[b].number) or 0
+      if na ~= nb then return na < nb end
+      return a < b
+    end)
+    if #order == 0 then SDP.wrapped('No numbers assigned yet: "Add number..." above, then edit the entry in the inspector.', C.muted) end
+    local lh = ImGui.GetTextLineHeight(ctx)
+    for _, i in ipairs(order) do
+      local e = x.numbers[i]
+      local what, target = SDP.entry_text(e)
+      local base = ImGui.GetCursorPosX(ctx)
+      local avail = ImGui.GetContentRegionAvail(ctx)
+      local tw = math.max(60, base + avail - SDP.COL_TARGET - 2)
+      local _, th = ImGui.CalcTextSize(ctx, target, false, tw)
+      local rh = math.max(lh, th)
+      local lbl = string.format('%03d##row%d', math.floor(tonumber(e.number) or 0), i)
+      if ImGui.Selectable(ctx, lbl, view.sdp_sel == i, ImGui.SelectableFlags_None, 0, rh) then view.sdp_sel = i end
+      ImGui.SameLine(ctx, SDP.COL_WHAT); ImGui.Text(ctx, what)
+      ImGui.SameLine(ctx, SDP.COL_TARGET); SDP.text_at(base, target)
+    end
+    end_child()
+  end
+  end_disabled()
+  pop_id()
 end
 
 -- ================================================================================================
@@ -2258,9 +2605,82 @@ local function draw_exquis_inspector()
   end
 end
 
+-- ---- SDP-120 inspector: the selected number entry --------------------------------------------------------
+local function draw_sdp120_inspector()
+  local x = SDP.section()
+  local i, e = SDP.selected()
+  if not e then
+    ImGui.SeparatorText(ctx, 'SDP-120 inspector')
+    ImGui.TextWrapped(ctx, 'Click a row of the number list on the panel to edit it here, or "Add number..." to create one.')
+    ImGui.Spacing(ctx)
+    ImGui.TextWrapped(ctx, string.format('Number entry: the piano\'s tone selection is its one rich control. A number typed in TONE mode (display 001-%d; 129 and up alias onto them) is swallowed by the ReaLearn unit before any instrument sees it and re-injected as CC %d on channel %d; the live watcher script reads that echo and performs the entry assigned to the number: add an FX by name to a track (the selected track, a new one or track 1; optionally opening its window or reusing an existing instance), or run a REAPER action.',
+      M.SDP120_MAX_NUMBER, math.floor(tonumber(x.echo_cc) or 20), math.floor(tonumber(x.echo_channel) or 13) + 1))
+    ImGui.Spacing(ctx)
+    ImGui.TextWrapped(ctx, 'Panel triggers (on the panel): the split voice switch (program change on channel 16) and the dual voice switch (program change on channel 6) can each run a REAPER action. The SUSTAIN button is not offered: it latches the piano\'s own sustain and nothing REAPER sends can release it. Ctrl+Z / Ctrl+Y undo and redo.')
+    return
+  end
+  push_id('sdpins_' .. i)
+  ImGui.SeparatorText(ctx, string.format('Number %03d', math.floor(tonumber(e.number) or 0)))
+  ImGui.TextDisabled(ctx, 'model.sdp120.numbers[' .. i .. ']')
+  begin_disabled(not x.enabled)
+  -- number: Enter applies; a number another entry already uses is refused
+  local n = math.floor(tonumber(e.number) or 1)
+  local nid = label_left('Number##sdpnum')
+  ImGui.SetNextItemWidth(ctx, 120)
+  local rv, nv = ImGui.InputInt(ctx, nid, n, 1, 10, ImGui.InputTextFlags_EnterReturnsTrue)
+  if rv then
+    nv = math.max(1, math.min(M.SDP120_MAX_NUMBER, math.floor(tonumber(nv) or n)))
+    local other = nv ~= n and SDP.number_owner(x, nv, i) or nil
+    if other then
+      SDP.num_err, SDP.num_err_idx = string.format('%03d is already used by entry %d (%s); pick a free number', nv, other, (SDP.entry_text(x.numbers[other]))), i
+    elseif nv ~= n then
+      push_undo('sdpnum' .. i); e.number = nv; SDP.num_err = nil; after_edit()
+    else
+      SDP.num_err = nil
+    end
+  end
+  ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, 'Enter applies')
+  if SDP.num_err and SDP.num_err_idx == i then SDP.wrapped(SDP.num_err, C.err) end
+  SDP.wrapped(string.format('The number as the piano displays it (001-%d); typing it in TONE mode fires this entry.', M.SDP120_MAX_NUMBER), C.muted)
+  -- kind
+  local pick = combo_ids('What##sdpkind', M.SDP120_NUMBER_KINDS, e.kind or 'none', -FLT_MIN)
+  if pick and pick ~= (e.kind or 'none') then
+    push_undo()
+    local keep = { number = e.number, kind = pick }
+    if pick == 'fx' then keep.fx = e.fx or ''; keep.track = e.track or 'selected'; keep.show = e.show ~= false; keep.reuse = e.reuse == true
+    elseif pick == 'action' then keep.command = e.command or 0 end
+    set_table(e, keep)
+    after_edit()
+  end
+  if e.kind == 'fx' then
+    text_field('sdpfx', label_left('FX name##sdpfx'), e, 'fx', -FLT_MIN)
+    if ImGui.Button(ctx, 'Choose FX...') then SDP.fx_filter, SDP.fx_focus = '', true; ImGui.OpenPopup(ctx, 'sdp_fxpick') end
+    ImGui.SetItemTooltip(ctx, 'Pick from the FX REAPER has scanned (reaper.EnumInstalledFX); the full name is what TrackFX_AddByName expects')
+    SDP.fx_popup(i)
+    if type(e.fx) ~= 'string' or e.fx == '' then SDP.wrapped('An FX name is required: type it or use "Choose FX..."', C.err) end
+    SDP.wrapped('As REAPER lists it, e.g. "VST3: ReaEQ (Cockos)" or "JS: ..."; a bare name such as ReaEQ also works when only one FX matches.', C.muted)
+    local tp = combo_ids('Track##sdptrack', M.SDP120_TRACK_TARGETS, e.track or 'selected', -FLT_MIN)
+    if tp then push_undo(); e.track = tp; after_edit() end
+    local ch, sv = SDP.check('sdpshow', 'Open the FX window', e.show ~= false)
+    if ch then push_undo(); e.show = sv; after_edit() end
+    local ch2, rv2 = SDP.check('sdpreuse', 'Reuse an existing instance instead of adding another', e.reuse == true)
+    if ch2 then push_undo(); e.reuse = rv2; after_edit() end
+    SDP.wrapped('Reuse: when the target track already holds this FX, that instance is used (and shown) instead of a second one being added.', C.muted)
+  elseif e.kind == 'action' then
+    ImGui.AlignTextToFramePadding(ctx); ImGui.Text(ctx, 'Action')
+    SDP.command_row('sdpnum_' .. i, function() return SDP.section().numbers[i] end)
+  else
+    SDP.wrapped('Nothing happens for this number (the piano still changes its tone).', C.muted)
+  end
+  end_disabled()
+  pop_id()
+end
+
 local function draw_inspector()
   if view.device == 'exquis' then
     draw_exquis_inspector()
+  elseif view.device == 'sdp120' then
+    draw_sdp120_inspector()
   else
     if view.show_modifiers then draw_modifiers_panel() end
     if sel.kind == 'button' then inspect_button(sel.id)
@@ -2322,7 +2742,9 @@ local function frame()
   local avail_w = ImGui.GetContentRegionAvail(ctx)
   local insp_w = math.max(360, math.min(560, avail_w * 0.38))
   if begin_child('panel', avail_w - insp_w - 8, 0, ImGui.ChildFlags_Borders, ImGui.WindowFlags_HorizontalScrollbar) then
-    if view.device == 'exquis' then draw_exquis_panel() else draw_panel() end
+    if view.device == 'exquis' then draw_exquis_panel()
+    elseif view.device == 'sdp120' then draw_sdp120_panel()
+    else draw_panel() end
     end_child()
   end
   ImGui.SameLine(ctx)

@@ -165,9 +165,9 @@ To check a change compiles before restarting, run it through any Lua 5.4 / Luau 
   selected-track volume/pan/mute/solo/arm, tempo, markers on the slider, RGB LEDs from REAPER state, and the same
   foot-switch shift as the keyboard. Verified on firmware 3.0.0. Start REAPER before the Exquis app if you keep the app open.
 
-- **Strich SDP-120 piano** (`docs/SDP120.md`). Not a controller, but a noisy MIDI citizen: a keep-alive sysex every second,
-  its metronome and rhythms as channel-10 notes, GS sysex on reverb changes. A small ReaLearn unit swallows what you do not
-  want before it reaches your tracks, with flags for each kind of message.
+- **Strich SDP-120 piano** (`docs/SDP120.md`). A noisy MIDI citizen (keep-alive sysex every second, metronome, rhythms
+  and demos as multi-channel MIDI) tamed by a ReaLearn filter unit, plus one useful control: typing a tone number
+  (001-128) on its panel adds a chosen FX to a track or runs a REAPER action, editable in the editor's SDP-120 device.
 
 All three are added by the first-time setup script when it finds the devices (edit the names at its top if yours differ).
 
