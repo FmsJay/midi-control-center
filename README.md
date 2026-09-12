@@ -35,6 +35,29 @@ state drives them: what lights up is what REAPER says is true, never an echo of 
 - **An editor inside REAPER** (ReaImGui) to remap everything, add layouts, pad modes, banks and latch modifiers, and apply
   without restarting. See *The editor* below.
 
+## Moving to another PC
+
+Everything the integration needs is in this repo; only the personal state and REAPER's own preferences are not.
+
+1. Fresh REAPER (7.x), Helgobox 2.18.2 and ReaImGui 0.10 (via ReaPack), started once each so REAPER scans the plugin.
+2. Preferences > MIDI Devices: enable the Oxygen's four ports (inputs "enabled" and "control", outputs enabled), the
+   Exquis in and out, the UR22 input if the FCB1010 is used, and the piano's "General MIDI" input and output. The
+   device *names* must match; the numbers may differ and are looked up by the setup script.
+3. `install.ps1 -ReaperResourcePath <folder with reaper.ini>` copies presets, scripts and the start-up block.
+4. Run `MIDI Control Center - Setup` from the Actions list (it registers the actions, writes controllers.json with
+   the new machine's device numbers, patches the FCB bridge preset, adds Helgobox to the monitoring FX, registers
+   the editor, watcher and dev hook), then restart REAPER, then Helgobox > Menu > Instance > Enable global control once.
+5. Open the editor (`MIDI Control Center` action) and press Apply once: that regenerates every preset for this
+   machine's device numbers from the model.
+
+What is personal, and therefore not in the public repo: `midi_control_center/model.json` (your layouts, Exquis modes,
+SDP-120 numbers) and `midi_control_center/exquis_snapshot.txt` (your Exquis layout colours). Put them in a `personal/`
+folder next to `install.ps1` and the installer copies them on a machine that has none yet; the private copy of this
+repo keeps that folder. Without them the editor starts from the shipped default (General DAW layout, Exquis off,
+SDP-120 off) and you switch the devices on in their tabs.
+
+Firmware is per device, not per PC: the Oxygen must be on 2.1.2 or newer, the Exquis on 2.1 or newer (3.0.0 tested).
+
 ## Requirements
 
 | Piece | Tested with | Notes |

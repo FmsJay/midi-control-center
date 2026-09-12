@@ -45,6 +45,21 @@ Copy-Item (Join-Path $repo "reaper\Scripts\MIDI Control Center\midi_control_cent
 Write-Host "Copied ReaLearn presets -> $presetDst"
 Write-Host "Copied ReaScripts       -> $scriptDst"
 
+# Optional personal state (kept out of the public repo; the private copy carries it): the editor's model.json and the
+# Exquis layout snapshot. Copied only when personal\ exists next to this script and the target does not exist yet,
+# so a machine that already has its own model is never overwritten (delete the target first to force it).
+$personal = Join-Path $repo "personal"
+if (Test-Path $personal) {
+    foreach ($name in @("model.json", "exquis_snapshot.txt")) {
+        $src = Join-Path $personal $name
+        $dst = Join-Path (Join-Path $scriptDst "midi_control_center") $name
+        if (Test-Path $src) {
+            if (Test-Path $dst) { Write-Host "personal\$name: target exists, left unchanged ($dst)" }
+            else { Copy-Item $src $dst; Write-Host "Copied personal\$name -> $dst" }
+        }
+    }
+}
+
 $snippet = Get-Content (Join-Path $repo "reaper\Scripts\__startup.oxygen-snippet.lua") -Raw
 $marker  = ">>> Oxygen Pro 61 LED unlock"
 if (Test-Path $startup) {
