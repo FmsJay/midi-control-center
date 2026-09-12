@@ -54,8 +54,8 @@ if (Test-Path $personal) {
         $src = Join-Path $personal $name
         $dst = Join-Path (Join-Path $scriptDst "midi_control_center") $name
         if (Test-Path $src) {
-            if (Test-Path $dst) { Write-Host "personal\$name: target exists, left unchanged ($dst)" }
-            else { Copy-Item $src $dst; Write-Host "Copied personal\$name -> $dst" }
+            if (Test-Path $dst) { Write-Host "personal\${name}: target exists, left unchanged ($dst)" }
+            else { Copy-Item $src $dst; Write-Host "Copied personal\${name} -> $dst" }
         }
     }
 }
