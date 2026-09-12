@@ -126,12 +126,13 @@ local view = { layout = 1, mode = 1, bank = 1, layer = 'normal', follow = false,
 local live = nil                 -- last state.read()
 local picker = { active = false, uid = nil, resolver = nil, field = nil }
 local last_error = nil
+local last_logged_error = nil
 local pending_apply, apply_running = false, false
 local last_action = nil
 local pending_dock = tonumber(reaper.GetExtState(EXT, 'dock'))
 if pending_dock == 0 then pending_dock = nil end
 local name_cache = {}
-local stk = { child = 0, combo = 0, col = 0, id = 0, disabled = 0, popup = 0, pchild = 0 }   -- open Begin*/Push* for error recovery (pchild = children inside a popup)
+local stk = { child = 0, combo = 0, col = 0, id = 0, disabled = 0, popup = 0, pchild = 0, wrap = 0, ops = {} }   -- open Begin*/Push* for error recovery (pchild = children inside a popup)
 
 -- Exquis keyboard I/O: live device settings, never part of the model (no undo). One query at a time, polled from
 -- frame() each cycle: pending = 'snapshot' | 'root' | 'scale' | nil, queue = the queries still to send, done = callback.
@@ -508,46 +509,54 @@ end
 -- ================================================================================================
 -- 5. ImGui helpers (balanced Begin/End tracking, combos, widgets)
 -- ================================================================================================
+local function op_push(k) stk.ops[#stk.ops + 1] = k end
+local function op_pop() stk.ops[#stk.ops] = nil end
 local function begin_child(id, w, h, cflags, wflags)
   local vis = ImGui.BeginChild(ctx, id, w or 0, h or 0, cflags or ImGui.ChildFlags_None, wflags or ImGui.WindowFlags_None)
   if vis then
-    stk.child = stk.child + 1
-    if stk.popup > 0 then stk.pchild = stk.pchild + 1 end   -- a child inside an open popup closes before the popup
+    stk.child = stk.child + 1; op_push('child')
+    if stk.popup > 0 then stk.pchild = stk.pchild + 1 end
   end
   return vis
 end
 local function end_child()
-  ImGui.EndChild(ctx); stk.child = stk.child - 1
+  ImGui.EndChild(ctx); stk.child = stk.child - 1; op_pop()
   if stk.popup > 0 and stk.pchild > 0 then stk.pchild = stk.pchild - 1 end
 end
 -- popups (BeginPopup only opens after OpenPopup; EndPopup only when it returned true), tracked like children
 local function begin_popup(id, flags)
   local vis = ImGui.BeginPopup(ctx, id, flags or ImGui.WindowFlags_None)
-  if vis then stk.popup = stk.popup + 1 end
+  if vis then stk.popup = stk.popup + 1; op_push('popup') end
   return vis
 end
-local function end_popup() ImGui.EndPopup(ctx); stk.popup = stk.popup - 1 end
-local function push_id(s) ImGui.PushID(ctx, s); stk.id = stk.id + 1 end
-local function pop_id() ImGui.PopID(ctx); stk.id = stk.id - 1 end
-local function push_col(idx, col) ImGui.PushStyleColor(ctx, idx, col); stk.col = stk.col + 1 end
-local function pop_col(n) n = n or 1; ImGui.PopStyleColor(ctx, n); stk.col = stk.col - n end
-local function push_wrap() ImGui.PushTextWrapPos(ctx, 0.0); stk.wrap = (stk.wrap or 0) + 1 end
-local function pop_wrap() ImGui.PopTextWrapPos(ctx); stk.wrap = stk.wrap - 1 end
-local function begin_disabled(d) ImGui.BeginDisabled(ctx, d); stk.disabled = stk.disabled + 1 end
-local function end_disabled() ImGui.EndDisabled(ctx); stk.disabled = stk.disabled - 1 end
+local function end_popup() ImGui.EndPopup(ctx); stk.popup = stk.popup - 1; op_pop() end
+local function push_id(s) ImGui.PushID(ctx, s); stk.id = stk.id + 1; op_push('id') end
+local function pop_id() ImGui.PopID(ctx); stk.id = stk.id - 1; op_pop() end
+local function push_col(idx, col) ImGui.PushStyleColor(ctx, idx, col); stk.col = stk.col + 1; op_push('col') end
+local function pop_col(n) n = n or 1; ImGui.PopStyleColor(ctx, n); stk.col = stk.col - n; for _ = 1, n do op_pop() end end
+local function push_wrap() ImGui.PushTextWrapPos(ctx, 0.0); stk.wrap = (stk.wrap or 0) + 1; op_push('wrap') end
+local function pop_wrap() ImGui.PopTextWrapPos(ctx); stk.wrap = stk.wrap - 1; op_pop() end
+local function begin_disabled(d) ImGui.BeginDisabled(ctx, d); stk.disabled = stk.disabled + 1; op_push('disabled') end
+local function end_disabled() ImGui.EndDisabled(ctx); stk.disabled = stk.disabled - 1; op_pop() end
 
--- after a pcall failure inside the frame, close whatever is still open so the next frame is clean
+-- after a pcall failure inside the frame, close whatever is still open, newest first, so the next frame is clean.
+-- Every step is guarded: a recovery that itself throws would kill the script instead of showing the error.
+local UNWIND_CLOSE = {
+  wrap = function() ImGui.PopTextWrapPos(ctx) end,
+  combo = function() ImGui.EndCombo(ctx) end,
+  popup = function() ImGui.EndPopup(ctx) end,
+  disabled = function() ImGui.EndDisabled(ctx) end,
+  id = function() ImGui.PopID(ctx) end,
+  col = function() ImGui.PopStyleColor(ctx, 1) end,
+  child = function() ImGui.EndChild(ctx) end,
+}
 local function unwind()
-  while (stk.wrap or 0) > 0 do ImGui.PopTextWrapPos(ctx); stk.wrap = stk.wrap - 1 end
-  while stk.combo > 0 do ImGui.EndCombo(ctx); stk.combo = stk.combo - 1 end
-  while stk.popup > 0 do   -- a popup (and the child it may hold) closes before the window it was opened from
-    while stk.pchild > 0 do ImGui.EndChild(ctx); stk.child = stk.child - 1; stk.pchild = stk.pchild - 1 end
-    ImGui.EndPopup(ctx); stk.popup = stk.popup - 1
+  for i = #stk.ops, 1, -1 do
+    local f = UNWIND_CLOSE[stk.ops[i]]
+    stk.ops[i] = nil
+    if f then pcall(f) end
   end
-  while stk.disabled > 0 do ImGui.EndDisabled(ctx); stk.disabled = stk.disabled - 1 end
-  while stk.id > 0 do ImGui.PopID(ctx); stk.id = stk.id - 1 end
-  if stk.col > 0 then ImGui.PopStyleColor(ctx, stk.col); stk.col = 0 end
-  while stk.child > 0 do ImGui.EndChild(ctx); stk.child = stk.child - 1 end
+  stk.child, stk.combo, stk.col, stk.id, stk.disabled, stk.popup, stk.pchild, stk.wrap = 0, 0, 0, 0, 0, 0, 0, 0
 end
 
 -- combo over {id,name} items; returns the newly chosen id or nil
@@ -578,12 +587,12 @@ local function combo_ids(label, items, cur, width)
   end
   local chosen
   if ImGui.BeginCombo(ctx, label, name_of(items, cur)) then
-    stk.combo = stk.combo + 1
+    stk.combo = stk.combo + 1; op_push('combo')
     for _, it in ipairs(items) do
       if ImGui.Selectable(ctx, it.name, it.id == cur) then chosen = it.id end
       if it.id == cur then ImGui.SetItemDefaultFocus(ctx) end
     end
-    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1
+    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1; op_pop()
   end
   return chosen
 end
@@ -594,11 +603,11 @@ local function combo_strings(label, list, cur, width)
   ImGui.SetNextItemWidth(ctx, fit_combo_width(width or -FLT_MIN, list))
   local chosen
   if ImGui.BeginCombo(ctx, label, tostring(cur or '-')) then
-    stk.combo = stk.combo + 1
+    stk.combo = stk.combo + 1; op_push('combo')
     for _, s in ipairs(list) do
       if ImGui.Selectable(ctx, s, s == cur) then chosen = s end
     end
-    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1
+    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1; op_pop()
   end
   return chosen
 end
@@ -618,7 +627,7 @@ local function colour_combo(label, cur, allow_default, width)
   ImGui.SetNextItemWidth(ctx, width or -FLT_MIN)
   local changed, value = false, nil
   if ImGui.BeginCombo(ctx, label, cur or '(default)') then
-    stk.combo = stk.combo + 1
+    stk.combo = stk.combo + 1; op_push('combo')
     if allow_default then
       if ImGui.Selectable(ctx, '(default)', cur == nil) then changed, value = true, nil end
     end
@@ -628,7 +637,7 @@ local function colour_combo(label, cur, allow_default, width)
       if ImGui.Selectable(ctx, name, name == cur) then changed, value = true, name end
       pop_id()
     end
-    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1
+    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1; op_pop()
   end
   return changed, value
 end
@@ -640,7 +649,7 @@ local function exquis_colour_combo(label, cur, width)
   ImGui.SetNextItemWidth(ctx, width or -FLT_MIN)
   local changed, value = false, nil
   if ImGui.BeginCombo(ctx, label, cur or '(none)') then
-    stk.combo = stk.combo + 1
+    stk.combo = stk.combo + 1; op_push('combo')
     if ImGui.Selectable(ctx, '(none)', cur == nil) then changed, value = true, nil end
     for _, name in ipairs(M.EXQUIS_RGB) do
       push_id(name)
@@ -648,7 +657,7 @@ local function exquis_colour_combo(label, cur, width)
       if ImGui.Selectable(ctx, name, name == cur) then changed, value = true, name end
       pop_id()
     end
-    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1
+    ImGui.EndCombo(ctx); stk.combo = stk.combo - 1; op_pop()
   end
   return changed, value
 end
@@ -2067,7 +2076,7 @@ local function draw_sdp120_panel()
       local base = ImGui.GetCursorPosX(ctx)
       local avail = ImGui.GetContentRegionAvail(ctx)
       local tw = math.max(60, base + avail - SDP.COL_TARGET - 2)
-      local _, th = ImGui.CalcTextSize(ctx, target, false, tw)
+      local _, th = ImGui.CalcTextSize(ctx, target, nil, nil, false, tw)   -- Lua form: (ctx, text, nil, nil, hide##, wrap_width)
       local rh = math.max(lh, th)
       local lbl = string.format('%03d##row%d', math.floor(tonumber(e.number) or 0), i)
       if ImGui.Selectable(ctx, lbl, view.sdp_sel == i, ImGui.SelectableFlags_None, 0, rh) then view.sdp_sel = i end
@@ -2780,7 +2789,12 @@ local function loop()
     local ok, err = pcall(frame)
     if not ok then
       last_error = tostring(err)
-      unwind()
+      if last_error ~= last_logged_error then  -- keep the original message where it can be read (once per distinct error)
+        last_logged_error = last_error
+        local f = io.open(reaper.GetResourcePath() .. '/Scripts/MIDI Control Center/midi_control_center/dev/editor_error.txt', 'a')
+        if f then f:write(os.date('%H:%M:%S'), '  ', last_error, '  [', table.concat(stk.ops, ','), ']', '\n'); f:close() end
+      end
+      pcall(unwind)
       -- show the failure instead of a blank window, and switch Follow off since it is the usual trigger
       if ImGui.ValidatePtr(ctx, 'ImGui_Context*') then
         ImGui.TextColored(ctx, 0xFF6060FF, 'Editor error (this frame was abandoned): ' .. last_error)
