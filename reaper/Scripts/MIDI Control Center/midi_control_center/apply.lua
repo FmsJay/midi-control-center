@@ -63,6 +63,8 @@ function A.reload_instance()
     if not ok or not chunk or chunk == "" then return false, "could not read the Helgobox state chunk" end
     local set_ok = reaper.TrackFX_SetNamedConfigParm(track, fx, "vst_chunk", chunk)
     if not set_ok then return false, "REAPER refused to set the Helgobox state chunk" end
+    -- a reload resets every ReaLearn parameter (layout, bank, modes) to 0: tell the Live watcher to reset its mirrors
+    reaper.SetExtState("OxygenPro61Watcher", "realearn_reloaded", tostring(reaper.time_precise()), false)
     return true
 end
 

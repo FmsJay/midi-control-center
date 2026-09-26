@@ -87,6 +87,17 @@ local next_poll = 0
 local layout = 0                      -- mirrors ReaLearn's layout parameter (both start at 0, step + wrap on CC 113)
 local bank = 0                        -- mirrors ReaLearn's bank parameter 0-3 (clamped, no wrap, like the preset)
 local last_seq = nil
+local seen_reload = reaper.GetExtState("OxygenPro61Watcher", "realearn_reloaded")
+-- ReaLearn reloads (editor Apply, setup, dev tools) reset its layout and bank to 0; follow suit so the sweep colour
+-- and the bank flash keep telling the truth
+local function check_realearn_reload()
+  local r = reaper.GetExtState("OxygenPro61Watcher", "realearn_reloaded")
+  if r ~= seen_reload then
+    seen_reload = r
+    layout, bank = 0, 0
+    log("ReaLearn reloaded: layout and bank mirrors reset to 1")
+  end
+end
 
 local function enqueue(at, entry)
   entry.at = at
@@ -275,6 +286,7 @@ local function tick()
     if present then out_idx = idx end
   end
   if SDP then SDP.reload_if_changed() end
+  check_realearn_reload()
   poll_layout_button(now)
   exquis_repaint(now)
   while #queue > 0 and now >= queue[1].at do
