@@ -568,6 +568,15 @@ function M.validate(model)
         end
     end
     if modifier_count > 2 then errors[#errors + 1] = "at most two modifiers in total (ReaLearn conditions take two modifiers)" end
+    do  -- LoopCanvas voice select can only tell "first layout" from "the others" (ReaLearn modifier conditions)
+        local v, first, rest, n = 0, false, 0, #(model.layouts or {})
+        for li, lay in ipairs(model.layouts or {}) do
+            if lay.select_target == "voices" then v = v + 1; if li == 1 then first = true else rest = rest + 1 end end
+        end
+        if v > 0 and not ((first and rest == 0) or (not first and rest == n - 1)) then
+            errors[#errors + 1] = "voice select: with more than two layouts, only the first layout, or every layout after the first, can select LoopCanvas voices"
+        end
+    end
     M.validate_exquis(model.exquis, errors)
     M.validate_sdp120(model.sdp120, errors)
     if type(model.port1_input_device) ~= "number" then errors[#errors + 1] = "port1_input_device must be a number" end
