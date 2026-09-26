@@ -21,6 +21,7 @@ local ENCODER_CC = 103
 local P_BANK, P_MODE, P_KNOB, P_PAD = 0, 1, 2, 3
 local P_VEL0 = 4
 local P_LAYOUT = 20
+local VOICE_ECHO_STATUS, VOICE_ECHO_CC0 = 0xBE, 20   -- keep in step with model.lua and the Live watcher
 local NEXT_PARAM = 21
 local MODE_OFF, MODE_REC, MODE_SEL, MODE_MUTE, MODE_SOLO = 0, 1, 2, 3, 4
 local KNOB_PAN, KNOB_DEV, KNOB_SEND, KNOB_SELSEND = 0, 1, 2, 3
@@ -378,6 +379,36 @@ for _, mid in ipairs(ALL_MODIFIER_IDS) do
     end
 end
 
+-- ---- LoopCanvas voice select ----------------------------------------------------------------------
+-- Layouts with select_target = "voices": in Select mode fader button N selects LoopCanvas voice N (its folder track)
+-- instead of track N. ReaLearn cannot address "the Nth voice", so the press is echoed into the port-1 input as
+-- CC (20 + voice index) on channel 15 and the Live watcher does the selecting (and lights the button). Layouts that
+-- keep tracks are untouched; when no layout uses voices nothing here changes the preset at all.
+local VOICE_LAYOUTS = {}
+for li, lay in ipairs(MODEL.layouts) do if lay.select_target == "voices" then VOICE_LAYOUTS[#VOICE_LAYOUTS + 1] = li - 1 end end
+local function layout_expr(op, join)
+    local parts = {}
+    for _, li in ipairs(VOICE_LAYOUTS) do parts[#parts + 1] = string.format("p[%d] %s %d", P_LAYOUT, op, li) end
+    return "(" .. table.concat(parts, join) .. ")"
+end
+local function voice_select_row(group, first_track)
+    if #VOICE_LAYOUTS == 0 then return end
+    -- the track-select buttons and their LEDs step aside in voice layouts
+    local keep = { kind = "Expression", condition = string.format("p[%d] == %d && %s", P_MODE, MODE_SEL, layout_expr("!=", " && ")) }
+    for _, m in ipairs(mappings) do
+        if m.group == group and (m.id:match("%-btn%-m" .. MODE_SEL .. "%-%d+$") or m.id:match("%-led%-m" .. MODE_SEL .. "%-%d+$")) then
+            m.activation_condition = keep
+        end
+    end
+    local use = { kind = "Expression", condition = string.format("p[%d] == %d && %s", P_MODE, MODE_SEL, layout_expr("==", " || ")) }
+    for i = 0, 7 do
+        local v = first_track + i
+        add { id = string.format("%s-voice-%d", group, i + 1), name = string.format("Select LoopCanvas voice %d", v + 1),
+              group = group, feedback_enabled = false, activation_condition = use, source = cc_range(0, 32 + i),
+              target = send_to_port1(string.format("%02X %02X [0gfe dcba]", VOICE_ECHO_STATUS, VOICE_ECHO_CC0 + v)) }
+    end
+end
+
 -- ---- fader banks ---------------------------------------------------------------------------------
 local function mixer_bank(group, first_track)
     for i = 0, 7 do
@@ -398,6 +429,7 @@ local function mixer_bank(group, first_track)
         end
     end
     fader_button_row(group, function(mode, i) return state_target(mode, track(first_track + i)) end)
+    voice_select_row(group, first_track)
 end
 local function focused_fx_bank(group)
     for i = 0, 7 do

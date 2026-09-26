@@ -460,6 +460,14 @@ local function check_button_assignment(a, where, errors, allow_modifier)
     end
 end
 
+-- what the fader buttons select in Select mode, per layout: REAPER tracks by number, or LoopCanvas voices
+-- (button N = voice N in LoopCanvas's own order; needs the LoopCanvas extension and the Live watcher)
+M.SELECT_TARGETS = {
+    { id = "tracks", name = "Tracks by number" },
+    { id = "voices", name = "LoopCanvas voice folders" },
+}
+M.VOICE_ECHO_STATUS, M.VOICE_ECHO_CC0 = 0xBE, 20   -- echo: CC (20 + voice index) on channel 15, any value
+
 function M.validate(model)
     local errors = {}
     if type(model) ~= "table" then return { "model is not a table" } end
@@ -472,6 +480,7 @@ function M.validate(model)
         if layout_ids[lay.id] then errors[#errors + 1] = where .. ": duplicate id" end
         layout_ids[lay.id] = true
         if not M.COLOURS[lay.sweep_colour or "green"] then errors[#errors + 1] = where .. ": unknown sweep colour" end
+        if lay.select_target ~= nil and lay.select_target ~= "tracks" and lay.select_target ~= "voices" then errors[#errors + 1] = where .. ": select_target must be tracks or voices" end
         if type(lay.pad_modes) ~= "table" or #lay.pad_modes < 1 then errors[#errors + 1] = where .. ": at least one pad mode"
         else
             if nmodes == nil then nmodes = #lay.pad_modes

@@ -179,6 +179,38 @@ local function exquis_repaint(now)
   log("Exquis left its settings menu; repainted")
 end
 
+-- LoopCanvas voice select: the preset echoes fader button N (Select mode, voice layouts) as CC 20+N on channel 15.
+-- Selects that voice's folder track (found by GUID), makes it LoopCanvas's active voice, scrolls it into view and
+-- lights the matching fader button.
+local VOICE_STATUS, VOICE_CC0, VOICE_MAX = 0xBE, 20, 32
+local function select_voice(v)
+  if not reaper.LC_VoiceCount or not reaper.LC_VoiceInfo then log("voice select: LoopCanvas extension not loaded"); return end
+  local n = reaper.LC_VoiceCount()
+  if v >= n then log(string.format("voice %d: the project has %d voice(s)", v + 1, n)); return end
+  local ok, info = reaper.LC_VoiceInfo(v, "")
+  local guid = ok and info and info:match("guid=({[%x%-]+})")
+  local tr
+  if guid then
+    for i = 0, reaper.CountTracks(0) - 1 do
+      local t = reaper.GetTrack(0, i)
+      if reaper.GetTrackGUID(t) == guid then tr = t; break end
+    end
+  end
+  if not tr then log("voice " .. (v + 1) .. ": folder track not found"); return end
+  reaper.SetOnlyTrackSelected(tr)
+  if reaper.LC_ActiveVoice then reaper.LC_ActiveVoice(v) end
+  reaper.Main_OnCommand(40913, 0)            -- Track: Vertical scroll selected tracks into view
+  if reaper.SetMixerScroll then reaper.SetMixerScroll(tr) end
+  if out_idx then
+    for k = 0, 7 do
+      local msg = string.char(0xB0, 32 + k, (k == v % 8) and 127 or 0)
+      reaper.SendMIDIMessageToHardware(out_idx, msg, #msg)
+    end
+  end
+  local _, name = reaper.GetTrackName(tr)
+  log(string.format("voice %d selected: %s", v + 1, name))
+end
+
 -- DAW button: CC 113 with a non-zero value on channel 1, from any control-enabled device.
 local function poll_layout_button(now)
   local newest = nil
@@ -202,6 +234,8 @@ local function poll_layout_button(now)
       elseif status == 0xB0 and d1 == BACK_CC then
         if d2 > 0 then paint_back_layer(now); log("Back layer armed")
         else repaint(now); log("Back layer dropped") end
+      elseif status == VOICE_STATUS and d1 >= VOICE_CC0 and d1 < VOICE_CC0 + VOICE_MAX then
+        select_voice(d1 - VOICE_CC0)
       elseif SDP and SDP.handle(status, d1, d2) then
         -- SDP-120 number echo performed
       elseif status == 0xB0 and (d1 == BANK_CC_DOWN or d1 == BANK_CC_UP) and d2 > 0 then
