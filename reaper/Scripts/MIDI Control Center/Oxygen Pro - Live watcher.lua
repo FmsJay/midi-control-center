@@ -180,35 +180,45 @@ local function exquis_repaint(now)
 end
 
 -- LoopCanvas voice select: the preset echoes fader button N (Select mode, voice layouts) as CC 20+N on channel 15.
--- Selects that voice's folder track (found by GUID), makes it LoopCanvas's active voice, scrolls it into view and
--- lights the matching fader button.
+-- Works like REAPER's track select buttons: each press TOGGLES that voice's folder track in the selection, so several
+-- voices can be selected. A voice that becomes selected is made LoopCanvas's active voice and scrolled into view.
+-- The eight fader-button LEDs show which voices of the current row are selected.
 local VOICE_STATUS, VOICE_CC0, VOICE_MAX = 0xBE, 20, 32
+local function voice_folder(v)
+  if not reaper.LC_VoiceInfo or v >= reaper.LC_VoiceCount() then return nil end
+  local ok, info = reaper.LC_VoiceInfo(v, "")
+  local guid = ok and info and info:match("guid=({[%x%-]+})")
+  if not guid then return nil end
+  for i = 0, reaper.CountTracks(0) - 1 do
+    local t = reaper.GetTrack(0, i)
+    if reaper.GetTrackGUID(t) == guid then return t end
+  end
+end
+local function paint_voice_leds(base)
+  if not out_idx then return end
+  for k = 0, 7 do
+    local t = voice_folder(base + k)
+    local on = t and reaper.IsTrackSelected(t)
+    local msg = string.char(0xB0, 32 + k, on and 127 or 0)
+    reaper.SendMIDIMessageToHardware(out_idx, msg, #msg)
+  end
+end
 local function select_voice(v)
   if not reaper.LC_VoiceCount or not reaper.LC_VoiceInfo then log("voice select: LoopCanvas extension not loaded"); return end
   local n = reaper.LC_VoiceCount()
   if v >= n then log(string.format("voice %d: the project has %d voice(s)", v + 1, n)); return end
-  local ok, info = reaper.LC_VoiceInfo(v, "")
-  local guid = ok and info and info:match("guid=({[%x%-]+})")
-  local tr
-  if guid then
-    for i = 0, reaper.CountTracks(0) - 1 do
-      local t = reaper.GetTrack(0, i)
-      if reaper.GetTrackGUID(t) == guid then tr = t; break end
-    end
-  end
+  local tr = voice_folder(v)
   if not tr then log("voice " .. (v + 1) .. ": folder track not found"); return end
-  reaper.SetOnlyTrackSelected(tr)
-  if reaper.LC_ActiveVoice then reaper.LC_ActiveVoice(v) end
-  reaper.Main_OnCommand(40913, 0)            -- Track: Vertical scroll selected tracks into view
-  if reaper.SetMixerScroll then reaper.SetMixerScroll(tr) end
-  if out_idx then
-    for k = 0, 7 do
-      local msg = string.char(0xB0, 32 + k, (k == v % 8) and 127 or 0)
-      reaper.SendMIDIMessageToHardware(out_idx, msg, #msg)
-    end
+  local now_on = not reaper.IsTrackSelected(tr)
+  reaper.SetTrackSelected(tr, now_on)
+  if now_on then
+    if reaper.LC_ActiveVoice then reaper.LC_ActiveVoice(v) end
+    reaper.Main_OnCommand(40913, 0)          -- Track: Vertical scroll selected tracks into view
+    if reaper.SetMixerScroll then reaper.SetMixerScroll(tr) end
   end
+  paint_voice_leds(v - v % 8)
   local _, name = reaper.GetTrackName(tr)
-  log(string.format("voice %d selected: %s", v + 1, name))
+  log(string.format("voice %d %s: %s", v + 1, now_on and "selected" or "unselected", name))
 end
 
 -- DAW button: CC 113 with a non-zero value on channel 1, from any control-enabled device.
