@@ -2302,9 +2302,9 @@ local function inspect_layout()
   local ch, v = colour_combo('Sweep colour##lay', l.sweep_colour or 'green', false, -FLT_MIN)
   if ch then push_undo(); l.sweep_colour = v; after_edit() end
   ImGui.TextDisabled(ctx, 'Colour of the pad sweep played when this layout becomes active')
-  local st = combo_ids('Select buttons', M.SELECT_TARGETS, l.select_target or 'tracks')
+  local st = combo_ids('Fader buttons', M.SELECT_TARGETS, l.select_target or 'tracks')
   if st then push_undo(); l.select_target = (st ~= 'tracks') and st or nil; after_edit() end
-  ImGui.TextWrapped(ctx, 'What the fader buttons pick in Select mode on the track banks: track N, or LoopCanvas voice N (its folder track, also made the active voice). Voices need the LoopCanvas extension and the Live watcher.')
+  ImGui.TextWrapped(ctx, 'What the fader buttons act on in Record / Select / Mute / Solo mode on the track banks: track N, or LoopCanvas voice N (LoopCanvas arms, selects, mutes or solos it; the LEDs show its state). Voices need the LoopCanvas extension and the Live watcher.')
   ImGui.Spacing(ctx)
   begin_disabled(#layouts() <= 1)
   if ImGui.Button(ctx, 'Delete this layout') then delete_layout() end

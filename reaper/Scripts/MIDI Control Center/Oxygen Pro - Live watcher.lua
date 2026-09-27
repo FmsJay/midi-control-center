@@ -190,46 +190,21 @@ local function exquis_repaint(now)
   log("Exquis left its settings menu; repainted")
 end
 
--- LoopCanvas voice select: the preset echoes fader button N (Select mode, voice layouts) as CC 20+N on channel 15.
--- Works like REAPER's track select buttons: each press TOGGLES that voice's folder track in the selection, so several
--- voices can be selected. A voice that becomes selected is made LoopCanvas's active voice and scrolled into view.
--- The eight fader-button LEDs show which voices of the current row are selected.
-local VOICE_STATUS, VOICE_CC0, VOICE_MAX = 0xBE, 20, 32
-local function voice_folder(v)
-  if not reaper.LC_VoiceInfo or v >= reaper.LC_VoiceCount() then return nil end
-  local ok, info = reaper.LC_VoiceInfo(v, "")
-  local guid = ok and info and info:match("guid=({[%x%-]+})")
-  if not guid then return nil end
-  for i = 0, reaper.CountTracks(0) - 1 do
-    local t = reaper.GetTrack(0, i)
-    if reaper.GetTrackGUID(t) == guid then return t end
+-- LoopCanvas voices on the fader buttons: the preset echoes a press as CC (base + voice index) on channel 15 and this
+-- runs LoopCanvas's own action for that voice. LoopCanvas does the work (and reports the state the LEDs show).
+local VOICE_STATUS = 0xBE
+local VOICE_ACTIONS = { { base = 20, verb = "TOGGLE" }, { base = 36, verb = "ARM" }, { base = 52, verb = "MUTE" }, { base = 68, verb = "SOLO" } }
+local function voice_action(cc)
+  for _, a in ipairs(VOICE_ACTIONS) do
+    if cc >= a.base and cc < a.base + 16 then
+      local name = string.format("_LOOPCANVAS_%s_VOICE_%d", a.verb, cc - a.base + 1)
+      local id = reaper.NamedCommandLookup(name)
+      if id == 0 then log(name .. ": not registered (LoopCanvas extension missing or too old)")
+      else reaper.Main_OnCommand(id, 0) end
+      return true
+    end
   end
-end
-local function paint_voice_leds(base)
-  if not out_idx then return end
-  for k = 0, 7 do
-    local t = voice_folder(base + k)
-    local on = t and reaper.IsTrackSelected(t)
-    local msg = string.char(0xB0, 32 + k, on and 127 or 0)
-    reaper.SendMIDIMessageToHardware(out_idx, msg, #msg)
-  end
-end
-local function select_voice(v)
-  if not reaper.LC_VoiceCount or not reaper.LC_VoiceInfo then log("voice select: LoopCanvas extension not loaded"); return end
-  local n = reaper.LC_VoiceCount()
-  if v >= n then log(string.format("voice %d: the project has %d voice(s)", v + 1, n)); return end
-  local tr = voice_folder(v)
-  if not tr then log("voice " .. (v + 1) .. ": folder track not found"); return end
-  local now_on = not reaper.IsTrackSelected(tr)
-  reaper.SetTrackSelected(tr, now_on)
-  if now_on then
-    if reaper.LC_ActiveVoice then reaper.LC_ActiveVoice(v) end
-    reaper.Main_OnCommand(40913, 0)          -- Track: Vertical scroll selected tracks into view
-    if reaper.SetMixerScroll then reaper.SetMixerScroll(tr) end
-  end
-  paint_voice_leds(v - v % 8)
-  local _, name = reaper.GetTrackName(tr)
-  log(string.format("voice %d %s: %s", v + 1, now_on and "selected" or "unselected", name))
+  return false
 end
 
 -- DAW button: CC 113 with a non-zero value on channel 1, from any control-enabled device.
@@ -255,8 +230,8 @@ local function poll_layout_button(now)
       elseif status == 0xB0 and d1 == BACK_CC then
         if d2 > 0 then paint_back_layer(now); log("Back layer armed")
         else repaint(now); log("Back layer dropped") end
-      elseif status == VOICE_STATUS and d1 >= VOICE_CC0 and d1 < VOICE_CC0 + VOICE_MAX then
-        select_voice(d1 - VOICE_CC0)
+      elseif status == VOICE_STATUS and voice_action(d1) then
+        -- LoopCanvas voice action run
       elseif SDP and SDP.handle(status, d1, d2) then
         -- SDP-120 number echo performed
       elseif status == 0xB0 and (d1 == BANK_CC_DOWN or d1 == BANK_CC_UP) and d2 > 0 then

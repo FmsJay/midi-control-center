@@ -460,11 +460,12 @@ local function check_button_assignment(a, where, errors, allow_modifier)
     end
 end
 
--- what the fader buttons select in Select mode, per layout: REAPER tracks by number, or LoopCanvas voices
--- (button N = voice N in LoopCanvas's own order; needs the LoopCanvas extension and the Live watcher)
+-- what the fader buttons act on (Record / Select / Mute / Solo) on the track banks, per layout: REAPER tracks by
+-- number, or LoopCanvas voices through LoopCanvas's own per-voice actions (button N = voice N from the top, 1-16;
+-- needs the LoopCanvas extension and the Live watcher)
 M.SELECT_TARGETS = {
     { id = "tracks", name = "Tracks by number" },
-    { id = "voices", name = "LoopCanvas voice folders" },
+    { id = "voices", name = "LoopCanvas voices" },
 }
 M.VOICE_ECHO_STATUS, M.VOICE_ECHO_CC0 = 0xBE, 20   -- echo: CC (20 + voice index) on channel 15, any value
 

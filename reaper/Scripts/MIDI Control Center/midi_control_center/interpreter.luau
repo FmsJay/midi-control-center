@@ -80,11 +80,16 @@ end
 local VOICE_LAYOUTS = {}
 for li, lay in ipairs(MODEL.layouts) do if lay.select_target == "voices" then VOICE_LAYOUTS[#VOICE_LAYOUTS + 1] = li - 1 end end
 local VOICE_LAYOUT_ON = not (#VOICE_LAYOUTS == 1 and VOICE_LAYOUTS[1] == 0)   -- voices on layouts > 0, or on layout 0 only
-local P_SELMODE = nil
+-- one hidden on/off switch per fader-button mode (Record, Select, Mute, Solo), set by the mode buttons: ReaLearn
+-- modifier conditions can only test "on / off", and the voice conditions need "this mode AND a voice layout"
+local P_MODESW = {}
 if #VOICE_LAYOUTS > 0 then
-    P_SELMODE = NEXT_PARAM
-    table.insert(parameters, { index = NEXT_PARAM, id = "selmode", name = "Fader buttons in Select mode", value_count = 2, value_labels = { "no", "yes" } })
-    NEXT_PARAM = NEXT_PARAM + 1
+    local names = { [1] = "Record", [2] = "Select", [3] = "Mute", [4] = "Solo" }
+    for mode = 1, 4 do
+        P_MODESW[mode] = NEXT_PARAM
+        table.insert(parameters, { index = NEXT_PARAM, id = "modesw" .. mode, name = "Fader buttons in " .. names[mode] .. " mode", value_count = 2, value_labels = { "no", "yes" } })
+        NEXT_PARAM = NEXT_PARAM + 1
+    end
 end
 local ALL_MODIFIER_IDS = {}
 for _, cid in ipairs(CONTROL_ORDER) do if MODIFIER_PARAM[cid] then table.insert(ALL_MODIFIER_IDS, cid) end end
@@ -213,10 +218,10 @@ for cc, idx in pairs({ [57] = MODE_OFF, [58] = MODE_REC, [59] = MODE_SEL, [60] =
           source = cc_button(15, cc), glue = { button_filter = "PressOnly", target_interval = { idx / 4, idx / 4 } }, target = param(P_MODE) }
     add { id = "mode-echo-" .. cc, name = "Mode button -> state echo", group = "global", feedback_enabled = false,
           source = cc_button(15, cc), glue = PRESS, target = send_to_port1(string.format("B0 %02X 7F", cc)) }
-    if P_SELMODE then
-        local on = (idx == MODE_SEL) and 1 or 0
-        add { id = "selmode-" .. cc, name = "Mode button -> Select-mode switch", group = "global", feedback_enabled = false,
-              source = cc_button(15, cc), glue = { button_filter = "PressOnly", target_interval = { on, on } }, target = param(P_SELMODE) }
+    for mode, pidx in pairs(P_MODESW) do
+        local on = (idx == mode) and 1 or 0
+        add { id = string.format("modesw%d-%d", mode, cc), name = "Mode button -> mode switch", group = "global", feedback_enabled = false,
+              source = cc_button(15, cc), glue = { button_filter = "PressOnly", target_interval = { on, on } }, target = param(pidx) }
     end
 end
 for cc, idx in pairs({ [85] = KNOB_PAN, [86] = KNOB_DEV, [87] = KNOB_SEND, [83] = KNOB_SELSEND }) do
@@ -394,33 +399,53 @@ for _, mid in ipairs(ALL_MODIFIER_IDS) do
     end
 end
 
--- ---- LoopCanvas voice select ----------------------------------------------------------------------
--- Layouts with select_target = "voices": in Select mode fader button N selects LoopCanvas voice N (its folder track)
--- instead of track N. ReaLearn cannot address "the Nth voice", so the press is echoed into the port-1 input as
--- CC (20 + voice index) on channel 15 and the Live watcher does the selecting (and lights the button).
--- ReaLearn 2.18.2 refuses a whole preset containing "Expression" or "Eel" conditions (measured 2026-09-26), so the
--- "Select mode AND voice layout" test is a two-modifier condition: P_SELMODE (set by the mode buttons) and the
--- layout parameter itself, which is only possible when the voice layouts are exactly "the first layout" or
--- exactly "every layout after the first" (model.lua validates this). When no layout uses voices nothing changes.
-local function voice_select_row(group, first_track)
+-- ---- LoopCanvas voices on the fader buttons ------------------------------------------------------
+-- Layouts with select_target = "voices": on the track banks, fader button N in Record / Select / Mute / Solo mode
+-- runs LoopCanvas's own per-voice action for voice N (arm, add-or-remove from the selection, mute, solo), N being
+-- the voice's position from the top (LoopCanvas numbers 1-16). Presses are echoed into the port-1 input as
+-- CC (base + voice index) on channel 15 and the Live watcher runs the action, because the Oxygen's latching buttons
+-- alternate 127 / 0 and a ReaperAction target would skip every other press. The LEDs come straight from
+-- LoopCanvas: each action reports its voice's state as its toggle state, which a feedback-only mapping mirrors.
+-- ReaLearn 2.18.2 refuses presets with "Expression" / "Eel" conditions (measured 2026-09-26), so "mode AND voice
+-- layout" is a two-modifier condition on the mode switch and the layout parameter; model.lua validates that the
+-- voice layouts are exactly the first layout or exactly every layout after it. No voice layout: nothing changes.
+local VOICE_VERB = { [MODE_REC] = "ARM", [MODE_SEL] = "TOGGLE", [MODE_MUTE] = "MUTE", [MODE_SOLO] = "SOLO" }
+local VOICE_BASE = { [MODE_SEL] = 20, [MODE_REC] = 36, [MODE_MUTE] = 52, [MODE_SOLO] = 68 }   -- keep in step with the watcher
+local LC_VOICES = 16
+local function voice_row(group, first_track)
     if #VOICE_LAYOUTS == 0 then return end
-    local keep = { kind = "Modifier", modifiers = { { parameter = P_SELMODE, on = true }, { parameter = P_LAYOUT, on = not VOICE_LAYOUT_ON } } }
-    local use  = { kind = "Modifier", modifiers = { { parameter = P_SELMODE, on = true }, { parameter = P_LAYOUT, on = VOICE_LAYOUT_ON } } }
-    if n_layouts <= 1 then
-        keep = { kind = "Modifier", modifiers = { { parameter = P_SELMODE, on = true }, { parameter = P_SELMODE, on = false } } }   -- never
-        use = { kind = "Modifier", modifiers = { { parameter = P_SELMODE, on = true } } }
+    local function cond_for(mode, voice_layout)
+        if n_layouts <= 1 then
+            if voice_layout then return { kind = "Modifier", modifiers = { { parameter = P_MODESW[mode], on = true } } } end
+            return { kind = "Modifier", modifiers = { { parameter = P_MODESW[mode], on = true }, { parameter = P_MODESW[mode], on = false } } }   -- never
+        end
+        local on = VOICE_LAYOUT_ON
+        if not voice_layout then on = not on end
+        return { kind = "Modifier", modifiers = { { parameter = P_MODESW[mode], on = true }, { parameter = P_LAYOUT, on = on } } }
     end
-    -- the track-select buttons and their LEDs step aside in voice layouts
+    -- the track buttons and their LEDs step aside in voice layouts
     for _, m in ipairs(mappings) do
-        if m.group == group and (m.id:match("%-btn%-m" .. MODE_SEL .. "%-%d+$") or m.id:match("%-led%-m" .. MODE_SEL .. "%-%d+$")) then
-            m.activation_condition = keep
+        if m.group == group then
+            local mode = tonumber(m.id:match("%-btn%-m(%d)%-%d+$") or m.id:match("%-led%-m(%d)%-%d+$"))
+            if mode and VOICE_VERB[mode] then m.activation_condition = cond_for(mode, false) end
         end
     end
-    for i = 0, 7 do
-        local v = first_track + i
-        add { id = string.format("%s-voice-%d", group, i + 1), name = string.format("Select LoopCanvas voice %d", v + 1),
-              group = group, feedback_enabled = false, activation_condition = use, source = cc_range(0, 32 + i),
-              target = send_to_port1(string.format("%02X %02X [0gfe dcba]", VOICE_ECHO_STATUS, VOICE_ECHO_CC0 + v)) }
+    for mode, verb in pairs(VOICE_VERB) do
+        local c = cond_for(mode, true)
+        for i = 0, 7 do
+            local v = first_track + i
+            if v < LC_VOICES then
+                add { id = string.format("%s-voice-m%d-%d", group, mode, i + 1), name = string.format("LoopCanvas voice %d: %s", v + 1, verb),
+                      group = group, feedback_enabled = false, activation_condition = c, source = cc_range(0, 32 + i),
+                      target = send_to_port1(string.format("%02X %02X [0gfe dcba]", VOICE_ECHO_STATUS, VOICE_BASE[mode] + v)) }
+                add { id = string.format("%s-voiceled-m%d-%d", group, mode, i + 1), name = string.format("LED = voice %d %s state", v + 1, verb),
+                      group = group, control_enabled = false, activation_condition = c, source = cc_button(0, 32 + i),
+                      target = reaper_action(string.format("_LOOPCANVAS_%s_VOICE_%d", verb, v + 1)) }
+            else
+                add { id = string.format("%s-voiceled-m%d-dark-%d", group, mode, i + 1), name = "LED off (no LoopCanvas voice beyond 16)",
+                      group = group, control_enabled = false, activation_condition = c, source = cc_button(0, 32 + i), target = { kind = "Dummy" } }
+            end
+        end
     end
 end
 
@@ -444,7 +469,7 @@ local function mixer_bank(group, first_track)
         end
     end
     fader_button_row(group, function(mode, i) return state_target(mode, track(first_track + i)) end)
-    voice_select_row(group, first_track)
+    voice_row(group, first_track)
 end
 local function focused_fx_bank(group)
     for i = 0, 7 do
