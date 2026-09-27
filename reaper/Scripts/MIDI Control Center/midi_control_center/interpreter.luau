@@ -91,6 +91,15 @@ if #VOICE_LAYOUTS > 0 then
         NEXT_PARAM = NEXT_PARAM + 1
     end
 end
+-- and one per per-track knob function (Pan, Send 1), for the voice knobs
+local P_KNOBSW = {}
+if #VOICE_LAYOUTS > 0 then
+    for _, kf in ipairs({ { KNOB_PAN, "Pan" }, { KNOB_SEND, "Send 1" } }) do
+        P_KNOBSW[kf[1]] = NEXT_PARAM
+        table.insert(parameters, { index = NEXT_PARAM, id = "knobsw" .. kf[1], name = "Knobs on " .. kf[2], value_count = 2, value_labels = { "no", "yes" } })
+        NEXT_PARAM = NEXT_PARAM + 1
+    end
+end
 local ALL_MODIFIER_IDS = {}
 for _, cid in ipairs(CONTROL_ORDER) do if MODIFIER_PARAM[cid] then table.insert(ALL_MODIFIER_IDS, cid) end end
 for _, id in ipairs(EXTERNAL_IDS) do table.insert(ALL_MODIFIER_IDS, id) end
@@ -229,6 +238,11 @@ for cc, idx in pairs({ [85] = KNOB_PAN, [86] = KNOB_DEV, [87] = KNOB_SEND, [83] 
           source = cc_button(15, cc), glue = { button_filter = "PressOnly", target_interval = { idx / 3, idx / 3 } }, target = param(P_KNOB) }
     add { id = "knobmode-echo-" .. cc, name = "Knob function -> state echo", group = "global", feedback_enabled = false,
           source = cc_button(15, cc), glue = PRESS, target = send_to_port1(string.format("B0 %02X 7F", cc)) }
+    for kf, pidx in pairs(P_KNOBSW) do
+        local on = (idx == kf) and 1 or 0
+        add { id = string.format("knobsw%d-%d", kf, cc), name = "Knob function -> knob switch", group = "global", feedback_enabled = false,
+              source = cc_button(15, cc), glue = { button_filter = "PressOnly", target_interval = { on, on } }, target = param(pidx) }
+    end
 end
 add { id = "master", name = "Master volume", group = "global", feedback_enabled = false, source = cc_range(0, 41), glue = PICKUP,
       target = { kind = "TrackVolume", track = MASTER } }
@@ -413,6 +427,7 @@ end
 local VOICE_VERB = { [MODE_REC] = "ARM", [MODE_SEL] = "TOGGLE", [MODE_MUTE] = "MUTE", [MODE_SOLO] = "SOLO" }
 local VOICE_BASE = { [MODE_SEL] = 20, [MODE_REC] = 36, [MODE_MUTE] = 52, [MODE_SOLO] = 68 }   -- keep in step with the watcher
 local LC_VOICES = 16
+local VOICE_CONT_STATUS, VOICE_CONT_BASE = 0xBC, { vol = 0, pan = 16, send = 32 }   -- CC (base + voice) on channel 13, value = position
 local function voice_row(group, first_track)
     if #VOICE_LAYOUTS == 0 then return end
     local function cond_for(mode, voice_layout)
@@ -429,6 +444,47 @@ local function voice_row(group, first_track)
         if m.group == group then
             local mode = tonumber(m.id:match("%-btn%-m(%d)%-%d+$") or m.id:match("%-led%-m(%d)%-%d+$"))
             if mode and VOICE_VERB[mode] then m.activation_condition = cond_for(mode, false) end
+        end
+    end
+    -- faders (volume) and the per-track knob functions (pan, send 1) follow the voices too; the watcher applies them
+    -- to each voice's folder track with pick-up, like ReaLearn's own track faders
+    local function layout_only(voice_layout, extra)
+        local mods = {}
+        if extra then mods[#mods + 1] = extra end
+        if n_layouts > 1 then
+            local on = VOICE_LAYOUT_ON
+            if not voice_layout then on = not on end
+            mods[#mods + 1] = { parameter = P_LAYOUT, on = on }
+        elseif not voice_layout then
+            mods[#mods + 1] = { parameter = P_LAYOUT, on = true }   -- one layout, and it uses voices: never
+        end
+        if #mods == 0 then return nil end
+        return { kind = "Modifier", modifiers = mods }
+    end
+    for _, m in ipairs(mappings) do
+        if m.group == group then
+            if m.id:match("%-fader%-%d+$") then
+                m.activation_condition = layout_only(false)
+            else
+                local km = tonumber(m.id:match("%-knob%-k(%d)%-%d+$"))
+                if km and P_KNOBSW[km] then m.activation_condition = layout_only(false, { parameter = P_KNOBSW[km], on = true }) end
+            end
+        end
+    end
+    for i = 0, 7 do
+        local v = first_track + i
+        if v < LC_VOICES then
+            add { id = string.format("%s-voicefader-%d", group, i + 1), name = string.format("LoopCanvas voice %d volume", v + 1),
+                  group = group, feedback_enabled = false, activation_condition = layout_only(true), source = cc_range(0, 12 + i),
+                  target = send_to_port1(string.format("%02X %02X [0gfe dcba]", VOICE_CONT_STATUS, VOICE_CONT_BASE.vol + v)) }
+            add { id = string.format("%s-voicepan-%d", group, i + 1), name = string.format("LoopCanvas voice %d pan", v + 1),
+                  group = group, feedback_enabled = false, activation_condition = layout_only(true, { parameter = P_KNOBSW[KNOB_PAN], on = true }),
+                  source = cc_range(0, 22 + i),
+                  target = send_to_port1(string.format("%02X %02X [0gfe dcba]", VOICE_CONT_STATUS, VOICE_CONT_BASE.pan + v)) }
+            add { id = string.format("%s-voicesend-%d", group, i + 1), name = string.format("LoopCanvas voice %d send 1", v + 1),
+                  group = group, feedback_enabled = false, activation_condition = layout_only(true, { parameter = P_KNOBSW[KNOB_SEND], on = true }),
+                  source = cc_range(0, 22 + i),
+                  target = send_to_port1(string.format("%02X %02X [0gfe dcba]", VOICE_CONT_STATUS, VOICE_CONT_BASE.send + v)) }
         end
     end
     for mode, verb in pairs(VOICE_VERB) do
@@ -538,16 +594,35 @@ local function custom_pads(group, padmode, pads)
         end
     end
 end
+-- Mixer pad mode in a voice layout: pads 1-8 mute and 9-16 solo LoopCanvas voices (through the watcher, which also
+-- paints them from LoopCanvas's per-voice states); no ReaLearn feedback, so ReaLearn leaves those pads alone
+local function voice_mixer_grid(group, padmode, first_track)
+    for k = 1, 8 do
+        local v = first_track + k - 1
+        if v < LC_VOICES then
+            add { id = string.format("%s-p%d-vmute-%d", group, padmode, k), name = string.format("Mute LoopCanvas voice %d", v + 1),
+                  group = group, feedback_enabled = false, activation_condition = cond(P_PAD, padmode),
+                  source = note(PAD_NOTE[k]), glue = PRESS, target = send_to_port1(string.format("%02X %02X 7F", VOICE_ECHO_STATUS, VOICE_BASE[MODE_MUTE] + v)) }
+            add { id = string.format("%s-p%d-vsolo-%d", group, padmode, k), name = string.format("Solo LoopCanvas voice %d", v + 1),
+                  group = group, feedback_enabled = false, activation_condition = cond(P_PAD, padmode),
+                  source = note(PAD_NOTE[k + 8]), glue = PRESS, target = send_to_port1(string.format("%02X %02X 7F", VOICE_ECHO_STATUS, VOICE_BASE[MODE_SOLO] + v)) }
+        end
+    end
+end
+local EMITTING_VOICE_LAYOUT = false
 local function emit_pad_mode(group, padmode, pm)
     if pm.kind == "drums" then drums(group, padmode)
+    elseif pm.kind == "mixer" and EMITTING_VOICE_LAYOUT then voice_mixer_grid(group, padmode, pm.first_track or 0)
     elseif pm.kind == "mixer" then mixer_grid(group, padmode, pm.first_track or 0)
     elseif pm.kind == "custom" then custom_pads(group, padmode, pm.pads)
     else for k = 1, 16 do paint(group, padmode, k, colour(pm.colour or "white")) end end
 end
 for li, lay in ipairs(MODEL.layouts) do
+    EMITTING_VOICE_LAYOUT = (lay.select_target == "voices")
     for mi, pm in ipairs(lay.pad_modes) do
         emit_pad_mode("lay" .. (li - 1), mi - 1, pm)
     end
 end
+EMITTING_VOICE_LAYOUT = false
 
 return { parameters = parameters, groups = groups, mappings = mappings }

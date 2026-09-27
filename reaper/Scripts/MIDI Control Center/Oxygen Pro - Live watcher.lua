@@ -87,7 +87,7 @@ local next_poll = 0
 local layout = 0                      -- mirrors ReaLearn's layout parameter (both start at 0, step + wrap on CC 113)
 local bank = 0                        -- mirrors ReaLearn's bank parameter 0-3 (clamped, no wrap, like the preset)
 local last_seq = nil
-local fb_mode, painted, voice_cfg = 0, nil, nil   -- fader-button mode mirror (0 Off .. 4 Solo), painted voice LEDs, voice config
+local fb_mode, painted, voice_cfg, pad_mode, pads_painted, picked = 0, nil, nil, 0, nil, {}   -- fader-button mode mirror (0 Off .. 4 Solo), painted voice LEDs, voice config
 local seen_reload = reaper.GetExtState("OxygenPro61Watcher", "realearn_reloaded")
 -- ReaLearn reloads (editor Apply, setup, dev tools) reset its layout and bank to 0; follow suit so the sweep colour
 -- and the bank flash keep telling the truth
@@ -95,7 +95,8 @@ local function check_realearn_reload()
   local r = reaper.GetExtState("OxygenPro61Watcher", "realearn_reloaded")
   if r ~= seen_reload then
     seen_reload = r
-    layout, bank, fb_mode, painted = 0, 0, 0, nil
+    layout, bank, fb_mode, painted, pad_mode = 0, 0, 0, nil, 0
+    picked, pads_painted = {}, nil
     voice_cfg = nil   -- an Apply may have changed which layouts use voices
     log("ReaLearn reloaded: layout and bank mirrors reset to 1")
   end
@@ -210,7 +211,14 @@ local function load_voice_cfg()
   if not okj then return end
   local ok, m = pcall(json.decode, text)
   if not ok or type(m) ~= "table" then return end
-  for i, lay in ipairs(m.layouts or {}) do if lay.select_target == "voices" then voice_cfg.layouts[i - 1] = true end end
+  voice_cfg.pad_modes = {}
+  for i, lay in ipairs(m.layouts or {}) do
+    if lay.select_target == "voices" then
+      voice_cfg.layouts[i - 1] = true
+      voice_cfg.pad_modes[i - 1] = lay.pad_modes or {}
+    end
+    voice_cfg.n_pad_modes = voice_cfg.n_pad_modes or #(lay.pad_modes or {})
+  end
   for i, b in ipairs(m.banks or {}) do if b.kind == "tracks" then voice_cfg.bank_first[i - 1] = b.first_track or 0 end end
 end
 local voice_id_cache = {}
@@ -221,15 +229,38 @@ local function voice_state(verb, n)
   return id ~= 0 and reaper.GetToggleCommandState(id) == 1
 end
 local next_led_poll, next_led_full = 0, 0
+local PAD_NOTES = { 40, 41, 42, 43, 48, 49, 50, 51, 36, 37, 38, 39, 44, 45, 46, 47 }
+local function paint_voice_pads(full)
+  local pms = voice_cfg.pad_modes and voice_cfg.pad_modes[layout]
+  local pm = pms and pms[pad_mode + 1]
+  if not (out_idx and pm and pm.kind == "mixer") then pads_painted = nil; return end
+  pads_painted = pads_painted or {}
+  local first = pm.first_track or 0
+  for k = 1, 16 do
+    local n = first + ((k - 1) % 8) + 1
+    local verb = k <= 8 and "MUTE" or "SOLO"
+    local on_c, off_c = (k <= 8) and 3 or 15, (k <= 8) and 14 or 56          -- red / chartreuse, yellow / azure
+    local id = voice_id_cache[verb .. n]
+    if id == nil then id = reaper.NamedCommandLookup(string.format("_LOOPCANVAS_%s_VOICE_%d", verb, n)); voice_id_cache[verb .. n] = id end
+    local st = (n <= 16 and id ~= 0) and reaper.GetToggleCommandState(id) or -1
+    local c = (st == 1) and on_c or ((st == 0) and off_c or 0)                -- -1: no such voice, pad dark
+    if full or pads_painted[k] ~= c then
+      pads_painted[k] = c
+      local msg = string.char(0x90, PAD_NOTES[k], c)
+      reaper.SendMIDIMessageToHardware(out_idx, msg, #msg)
+    end
+  end
+end
 local function paint_voice_leds(now)
   if now < next_led_poll then return end
   next_led_poll = now + 0.08
   if not voice_cfg then load_voice_cfg() end
   local verb = MODE_VERB[fb_mode]
   local first = voice_cfg.bank_first[bank]
-  if not (out_idx and verb and first and voice_cfg.layouts[layout]) then painted = nil; return end
   local full = now >= next_led_full                        -- repaint everything now and then: other sources may overwrite
   if full then next_led_full = now + 1.0 end
+  if voice_cfg.layouts[layout] then paint_voice_pads(full) else pads_painted = nil end
+  if not (out_idx and verb and first and voice_cfg.layouts[layout]) then painted = nil; return end
   painted = painted or {}
   for k = 0, 7 do
     local n = first + k + 1
@@ -240,6 +271,57 @@ local function paint_voice_leds(now)
       reaper.SendMIDIMessageToHardware(out_idx, msg, #msg)
     end
   end
+end
+
+-- Faders / pan / send 1 in voice layouts: CC (base + voice) on channel 13 carries the control's position. Applied to
+-- the voice's folder track with pick-up: a control only takes over once it reaches the current value, so switching
+-- layout or bank never makes a voice jump.
+local CONT_STATUS = 0xBC
+local function voice_folder(v)
+  if not (reaper.LC_VoiceInfo and reaper.LC_VoiceCount) or v >= reaper.LC_VoiceCount() then return nil end
+  local ok, info = reaper.LC_VoiceInfo(v, "")
+  local guid = ok and info and info:match("guid=({[%x%-]+})")
+  if not guid then return nil end
+  for i = 0, reaper.CountTracks(0) - 1 do
+    local t = reaper.GetTrack(0, i)
+    if reaper.GetTrackGUID(t) == guid then return t end
+  end
+end
+local function vol_to_norm(vol)
+  if vol <= 0 then return 0 end
+  return math.max(0, math.min(1, reaper.DB2SLIDER(20 * math.log(vol, 10)) / 1000))
+end
+local function norm_to_vol(x)
+  if x <= 0 then return 0 end
+  return 10 ^ (reaper.SLIDER2DB(x * 1000) / 20)
+end
+local function voice_continuous(cc, value)
+  local kind, v
+  if cc < 16 then kind, v = "vol", cc elseif cc < 32 then kind, v = "pan", cc - 16 elseif cc < 48 then kind, v = "send", cc - 32 else return false end
+  local tr = voice_folder(v)
+  if not tr then return true end
+  local x = value / 127
+  local cur
+  if kind == "vol" then cur = vol_to_norm(reaper.GetMediaTrackInfo_Value(tr, "D_VOL"))
+  elseif kind == "pan" then cur = (reaper.GetMediaTrackInfo_Value(tr, "D_PAN") + 1) / 2
+  else
+    if reaper.GetTrackNumSends(tr, 0) < 1 then return true end
+    cur = vol_to_norm(reaper.GetTrackSendInfo_Value(tr, 0, 0, "D_VOL"))
+  end
+  local key = kind .. v
+  local p = picked[key]
+  if not p then
+    if math.abs(x - cur) <= 3 / 127 or (picked[key .. "last"] and (picked[key .. "last"] - cur) * (x - cur) <= 0) then
+      picked[key] = true
+    else
+      picked[key .. "last"] = x
+      return true
+    end
+  end
+  if kind == "vol" then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", norm_to_vol(x))
+  elseif kind == "pan" then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", math.max(-1, math.min(1, (value - 64) / 63)))
+  else reaper.SetTrackSendInfo_Value(tr, 0, 0, "D_VOL", norm_to_vol(x)) end
+  return true
 end
 
 local function voice_action(cc)
@@ -271,9 +353,14 @@ local function poll_layout_button(now)
         local n = 0
         for _ in pairs(LAYOUT_COLOUR) do n = n + 1 end
         layout = (layout + 1) % math.max(1, n)
-        painted = nil
+        painted, pads_painted, picked = nil, nil, {}
         flash(now, LAYOUT_COLOUR[layout] or 12)
         log("layout press seen -> layout " .. (layout + 1) .. " of " .. n)
+      elseif status == 0xB0 and (d1 == 0x6B or d1 == 0x6C) and d2 > 0 then
+        if not voice_cfg then load_voice_cfg() end
+        local n = math.max(1, voice_cfg.n_pad_modes or 1)
+        pad_mode = (pad_mode + (d1 == 0x6C and 1 or -1)) % n
+        pads_painted = nil
       elseif status == 0xB0 and d1 >= 57 and d1 <= 61 and d2 > 0 then
         fb_mode = d1 - 57; painted = nil
       elseif status == 0xB0 and d1 == TAP_CC and d2 > 0 then
@@ -281,13 +368,15 @@ local function poll_layout_button(now)
       elseif status == 0xB0 and d1 == BACK_CC then
         if d2 > 0 then paint_back_layer(now); log("Back layer armed")
         else repaint(now); log("Back layer dropped") end
+      elseif status == CONT_STATUS and voice_continuous(d1, d2) then
+        -- voice fader / pan / send
       elseif status == VOICE_STATUS and voice_action(d1) then
         -- LoopCanvas voice action run
       elseif SDP and SDP.handle(status, d1, d2) then
         -- SDP-120 number echo performed
       elseif status == 0xB0 and (d1 == BANK_CC_DOWN or d1 == BANK_CC_UP) and d2 > 0 then
         bank = math.max(0, math.min(3, bank + (d1 == BANK_CC_UP and 1 or -1)))
-        painted = nil
+        painted, picked = nil, {}
         flash_bank(now)
       end
     end
