@@ -277,6 +277,14 @@ end
 -- the voice's folder track with pick-up: a control only takes over once it reaches the current value, so switching
 -- layout or bank never makes a voice jump.
 local CONT_STATUS = 0xBC
+-- run a voice handler without letting an error stop the watcher's defer loop (report it once per message)
+local last_guard_err = nil
+local function guarded(fn, ...)
+  local ok, res = pcall(fn, ...)
+  if ok then return res end
+  if tostring(res) ~= last_guard_err then last_guard_err = tostring(res); log("voice control error: " .. last_guard_err) end
+  return true
+end
 local function voice_folder(v)
   if not (reaper.LC_VoiceInfo and reaper.LC_VoiceCount) or v >= reaper.LC_VoiceCount() then return nil end
   local ok, info = reaper.LC_VoiceInfo(v, "")
@@ -324,11 +332,9 @@ local function voice_continuous(cc, value)
     end
   end
   if kind == "vol" then
-    local nv = reaper.CSurf_OnVolumeChangeEx(tr, norm_to_vol(x), false, false)
-    reaper.CSurf_SetSurfaceVolume(tr, nv, nil)
+    reaper.CSurf_OnVolumeChangeEx(tr, norm_to_vol(x), false, false)
   elseif kind == "pan" then
-    local np = reaper.CSurf_OnPanChangeEx(tr, math.max(-1, math.min(1, (value - 64) / 63)), false, false)
-    reaper.CSurf_SetSurfacePan(tr, np, nil)
+    reaper.CSurf_OnPanChangeEx(tr, math.max(-1, math.min(1, (value - 64) / 63)), false, false)
   else
     reaper.CSurf_OnSendVolumeChange(tr, 0, norm_to_vol(x), false)
   end
@@ -379,9 +385,9 @@ local function poll_layout_button(now)
       elseif status == 0xB0 and d1 == BACK_CC then
         if d2 > 0 then paint_back_layer(now); log("Back layer armed")
         else repaint(now); log("Back layer dropped") end
-      elseif status == CONT_STATUS and voice_continuous(d1, d2) then
+      elseif status == CONT_STATUS and guarded(voice_continuous, d1, d2) then
         -- voice fader / pan / send
-      elseif status == VOICE_STATUS and voice_action(d1) then
+      elseif status == VOICE_STATUS and guarded(voice_action, d1) then
         -- LoopCanvas voice action run
       elseif SDP and SDP.handle(status, d1, d2) then
         -- SDP-120 number echo performed
@@ -414,7 +420,7 @@ local function tick()
   end
   if SDP then SDP.reload_if_changed() end
   check_realearn_reload()
-  paint_voice_leds(now)
+  guarded(paint_voice_leds, now)
   poll_layout_button(now)
   exquis_repaint(now)
   while #queue > 0 and now >= queue[1].at do
