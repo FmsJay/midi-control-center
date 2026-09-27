@@ -87,7 +87,19 @@ local next_poll = 0
 local layout = 0                      -- mirrors ReaLearn's layout parameter (both start at 0, step + wrap on CC 113)
 local bank = 0                        -- mirrors ReaLearn's bank parameter 0-3 (clamped, no wrap, like the preset)
 local last_seq = nil
-local fb_mode, painted, voice_cfg, pad_mode, pads_painted, picked = 0, nil, nil, 0, nil, {}   -- fader-button mode mirror (0 Off .. 4 Solo), painted voice LEDs, voice config
+local fb_mode, painted, voice_cfg, pad_mode, pads_painted, picked = 0, nil, nil, 0, nil, {}
+-- the mirrors survive a watcher restart (a newer copy retires the running one): each copy saves them to a
+-- session-only ExtState and the next copy starts from there. A ReaLearn reload still resets them all to 0.
+local MIRROR_KEY = "mirrors"
+do
+  local l, b, m, p = reaper.GetExtState("OxygenPro61Watcher", MIRROR_KEY):match("^(%d+),(%d+),(%d+),(%d+)$")
+  if l then layout, bank, fb_mode, pad_mode = tonumber(l), tonumber(b), tonumber(m), tonumber(p) end
+end
+local saved_mirrors = nil
+local function save_mirrors()
+  local sig = string.format("%d,%d,%d,%d", layout, bank, fb_mode, pad_mode)
+  if sig ~= saved_mirrors then saved_mirrors = sig; reaper.SetExtState("OxygenPro61Watcher", MIRROR_KEY, sig, false) end
+end   -- fader-button mode mirror (0 Off .. 4 Solo), painted voice LEDs, voice config
 local seen_reload = reaper.GetExtState("OxygenPro61Watcher", "realearn_reloaded")
 -- ReaLearn reloads (editor Apply, setup, dev tools) reset its layout and bank to 0; follow suit so the sweep colour
 -- and the bank flash keep telling the truth
@@ -398,6 +410,7 @@ local function poll_layout_button(now)
   if newest then last_seq = newest end
   if last_seq == nil then last_seq = 0 end   -- nothing in the buffer yet: start counting from here
   for cc, val in pairs(cont_latest) do guarded(voice_continuous, cc, val) end
+  save_mirrors()
 end
 
 local function tick()
