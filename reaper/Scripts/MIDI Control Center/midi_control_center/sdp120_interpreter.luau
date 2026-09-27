@@ -24,7 +24,14 @@ local function action(cmd) return { kind = "ReaperAction", command = cmd, invoca
 -- channels the piano uses for accompaniment / demo playback (0-based); 1, 6 and 16 carry keys, dual and split
 local PART_CHANNELS = { 1, 2, 3, 4, 6, 7, 8, 10, 11, 12, 13, 14 }
 
-if F.keepalive then
+if F.keepalive and M.echo_numbers then
+    -- still swallowed, but passed on as a "piano is awake" pulse (CC echo_cc + 1): the watcher only accepts tone
+    -- numbers from a piano that has been awake a few seconds, because waking up sends tone 001 by itself
+    add({ id = "keepalive", name = "Keep-alive sysex -> awake pulse", feedback_enabled = false,
+          source = { kind = "MidiRaw", pattern = "F0 33 00 F7" },
+          target = { kind = "SendMidi", message = string.format("%02X %02X 7F", 0xB0 + M.echo_channel, M.echo_cc + 1),
+                     destination = { kind = "InputDevice", device_id = M.input_device } } })
+elseif F.keepalive then
     swallow("keepalive", "Keep-alive sysex (F0 33 00 F7)", { kind = "MidiRaw", pattern = "F0 33 00 F7" })
 end
 if F.gs_sysex then

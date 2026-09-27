@@ -79,8 +79,27 @@ function S.execute(entry)
 end
 
 -- called by the watcher for every 3-byte input event; returns true when it was the number echo
+-- The piano sends its keep-alive once a second while it is on (passed on by the unit as CC echo_cc + 1). Waking from
+-- idle it also announces tone 001 by itself, which looks exactly like typing 001. So a tone number only counts when
+-- the keep-alive stream has run steadily for a few seconds and is still running.
+S.AWAKE_GAP, S.SETTLE = 3.0, 5.0
+S.last_alive, S.alive_since = nil, nil
+function S.piano_settled(now)
+    return S.last_alive ~= nil and now - S.last_alive <= S.AWAKE_GAP and now - S.alive_since >= S.SETTLE
+end
 function S.handle(status, d1, d2)
-    if not S.cfg or status ~= S.status or d1 ~= S.cc then return false end
+    if not S.cfg or status ~= S.status then return false end
+    local now = reaper.time_precise()
+    if d1 == S.cc + 1 then                                  -- awake pulse
+        if S.last_alive == nil or now - S.last_alive > S.AWAKE_GAP then S.alive_since = now end
+        S.last_alive = now
+        return true
+    end
+    if d1 ~= S.cc then return false end
+    if not S.piano_settled(now) then
+        S.log(string.format("tone %03d ignored: the piano has just woken up (or its keep-alive is filtered off)", d2 + 1))
+        return true
+    end
     local number = d2 + 1
     local entry = S.by_number[number]
     if not entry then S.log(string.format("number %03d: nothing assigned", number)); return true end

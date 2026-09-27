@@ -134,6 +134,7 @@ def main():
     L2 = lua_runtime()
     L2.execute("""
         calls = {}
+        clock = 100
         reaper = {
             ShowConsoleMsg = function(s) calls[#calls+1] = {"log", s} end,
             GetExtState = function() return "g1" end,
@@ -147,6 +148,7 @@ def main():
             Undo_BeginBlock = function() end, Undo_EndBlock = function() end,
             TrackFX_AddByName = function(tr, name, rec, inst) calls[#calls+1] = {"fx", tr, name, inst}; return name == "Missing" and -1 or 3 end,
             TrackFX_Show = function(tr, idx, flag) calls[#calls+1] = {"show", tr, idx, flag} end,
+            time_precise = function() return clock end,
         }
     """)
     S = req(L2, "sdp120_numbers")
@@ -171,11 +173,26 @@ def main():
     S.cfg = L2.table(); S.status = 0xBD; S.cc = 20
     S.by_number = L2.table()
     S.by_number[5] = L2.table(kind="action", command=40001)
+    # waking up: tone 001 arrives with no keep-alive stream behind it -> ignored, nothing runs
+    n_before = int(L2.eval("#calls"))
+    assert S.handle(0xBD, 20, 4) is True
+    assert all(c[0] != "cmd" for c in to_py(L2.eval("calls"))[n_before:]), "a number must not run before the piano has settled"
+    # keep-alive pulses (CC 21) for 6 s: settled
+    for t in (100, 101, 102, 103, 104, 105, 106):
+        L2.execute("clock = %d" % t); assert S.handle(0xBD, 21, 127) is True
+    # a pulse gap longer than 3 s means the piano slept: the settle time starts again
+    L2.execute("clock = 120"); S.handle(0xBD, 21, 127)
+    L2.execute("clock = 121")
+    n_before = int(L2.eval("#calls")); S.handle(0xBD, 20, 4)
+    assert all(c[0] != "cmd" for c in to_py(L2.eval("calls"))[n_before:]), "woke at 120: still settling at 121"
+    for t in (122, 123, 124, 125, 126):
+        L2.execute("clock = %d" % t); S.handle(0xBD, 21, 127)
+    L2.execute("clock = 126.5")
     assert S.handle(0xBD, 20, 4) is True          # value 4 -> number 5
     assert to_py(L2.eval("calls[#calls - 1]")) == ["cmd", 40001]   # the last entry is the console log line
     assert S.handle(0xBD, 20, 9) is True           # nothing assigned: still consumed as an echo
     assert S.handle(0xB0, 20, 4) is False          # wrong channel
-    assert S.handle(0xBD, 21, 4) is False          # wrong CC
+    assert S.handle(0xBD, 22, 4) is False          # unrelated CC (21 is the awake pulse)
     print("test_sdp120: OK")
 
 
