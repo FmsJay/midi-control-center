@@ -285,7 +285,21 @@ local function guarded(fn, ...)
   if tostring(res) ~= last_guard_err then last_guard_err = tostring(res); log("voice control error: " .. last_guard_err) end
   return true
 end
+local voice_folder_lookup
+local folder_cache, folder_cache_at = {}, 0
 local function voice_folder(v)
+  local now = reaper.time_precise()
+  if now - folder_cache_at > 0.5 then folder_cache, folder_cache_at = {}, now end
+  local c = folder_cache[v]
+  if c ~= nil then
+    if c and reaper.ValidatePtr(c, "MediaTrack*") then return c end
+    if c == false then return nil end
+  end
+  local t = voice_folder_lookup(v)
+  folder_cache[v] = t or false
+  return t
+end
+function voice_folder_lookup(v)
   if not (reaper.LC_VoiceInfo and reaper.LC_VoiceCount) or v >= reaper.LC_VoiceCount() then return nil end
   local ok, info = reaper.LC_VoiceInfo(v, "")
   local guid = ok and info and info:match("guid=({[%x%-]+})")
@@ -309,28 +323,10 @@ local function voice_continuous(cc, value)
   local tr = voice_folder(v)
   if not tr then return true end
   local x = value / 127
-  local cur
-  -- read what the fader shows (envelopes included) and write the way a control surface does: LoopCanvas's voice
-  -- folders carry Volume / Pan envelopes in Latch mode, which override a plain D_VOL write but honour a surface move
-  -- (and record it while playing, which is how LoopCanvas captures moves)
-  local _, uvol, upan = reaper.GetTrackUIVolPan(tr)
-  if kind == "vol" then cur = vol_to_norm(uvol)
-  elseif kind == "pan" then cur = (upan + 1) / 2
-  else
-    if reaper.GetTrackNumSends(tr, 0) < 1 then return true end
-    local _, svol = reaper.GetTrackSendUIVolPan(tr, 0)
-    cur = vol_to_norm(svol)
-  end
-  local key = kind .. v
-  local p = picked[key]
-  if not p then
-    if math.abs(x - cur) <= 3 / 127 or (picked[key .. "last"] and (picked[key .. "last"] - cur) * (x - cur) <= 0) then
-      picked[key] = true
-    else
-      picked[key .. "last"] = x
-      return true
-    end
-  end
+  -- written the way a control surface does: LoopCanvas's voice folders carry Volume / Pan envelopes in Latch mode,
+  -- which override a plain D_VOL write but honour a surface move (and record it while playing). No pick-up: the
+  -- voice jumps to the physical fader the moment it moves.
+  if kind == "send" and reaper.GetTrackNumSends(tr, 0) < 1 then return true end
   if kind == "vol" then
     reaper.CSurf_OnVolumeChangeEx(tr, norm_to_vol(x), false, false)
   elseif kind == "pan" then
@@ -357,6 +353,7 @@ end
 -- DAW button: CC 113 with a non-zero value on channel 1, from any control-enabled device.
 local function poll_layout_button(now)
   local newest = nil
+  local cont_latest = {}
   for i = 0, 63 do
     local seq, buf = reaper.MIDI_GetRecentInputEvent(i)
     if not seq or seq == 0 or not buf or buf == "" then break end
@@ -385,8 +382,8 @@ local function poll_layout_button(now)
       elseif status == 0xB0 and d1 == BACK_CC then
         if d2 > 0 then paint_back_layer(now); log("Back layer armed")
         else repaint(now); log("Back layer dropped") end
-      elseif status == CONT_STATUS and guarded(voice_continuous, d1, d2) then
-        -- voice fader / pan / send
+      elseif status == CONT_STATUS then
+        if cont_latest[d1] == nil then cont_latest[d1] = d2 end   -- newest first: keep only the latest position
       elseif status == VOICE_STATUS and guarded(voice_action, d1) then
         -- LoopCanvas voice action run
       elseif SDP and SDP.handle(status, d1, d2) then
@@ -400,6 +397,7 @@ local function poll_layout_button(now)
   end
   if newest then last_seq = newest end
   if last_seq == nil then last_seq = 0 end   -- nothing in the buffer yet: start counting from here
+  for cc, val in pairs(cont_latest) do guarded(voice_continuous, cc, val) end
 end
 
 local function tick()
