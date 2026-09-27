@@ -194,6 +194,36 @@ end
 -- runs LoopCanvas's own action for that voice. LoopCanvas does the work (and reports the state the LEDs show).
 local VOICE_STATUS = 0xBE
 local VOICE_ACTIONS = { { base = 20, verb = "TOGGLE" }, { base = 36, verb = "ARM" }, { base = 52, verb = "MUTE" }, { base = 68, verb = "SOLO" } }
+-- ReaLearn does not notice when an extension action's toggle state changes, so the voice LEDs would freeze. Poll
+-- LoopCanvas's 64 per-voice states a few times a second and ask ReaLearn to resend feedback when any changed
+-- (covers mouse clicks and LoopCanvas's own verbs too).
+local voice_ids, voice_sig, next_voice_poll = nil, nil, 0
+local function poll_voice_states(now)
+  if now < next_voice_poll then return end
+  next_voice_poll = now + 0.15
+  if not voice_ids then
+    voice_ids = {}
+    for _, a in ipairs(VOICE_ACTIONS) do
+      for n = 1, 16 do
+        local id = reaper.NamedCommandLookup(string.format("_LOOPCANVAS_%s_VOICE_%d", a.verb, n))
+        if id ~= 0 then voice_ids[#voice_ids + 1] = id end
+      end
+    end
+  end
+  if #voice_ids == 0 then return end
+  local t = {}
+  for i, id in ipairs(voice_ids) do t[i] = reaper.GetToggleCommandState(id) == 1 and "1" or "0" end
+  local sig = table.concat(t)
+  if sig ~= voice_sig then
+    local first = (voice_sig == nil)
+    voice_sig = sig
+    if not first then
+      local cmd = reaper.NamedCommandLookup(RESYNC_CMD)
+      if cmd ~= 0 then reaper.Main_OnCommand(cmd, 0) end
+    end
+  end
+end
+
 local function voice_action(cc)
   for _, a in ipairs(VOICE_ACTIONS) do
     if cc >= a.base and cc < a.base + 16 then
@@ -262,6 +292,7 @@ local function tick()
   end
   if SDP then SDP.reload_if_changed() end
   check_realearn_reload()
+  poll_voice_states(now)
   poll_layout_button(now)
   exquis_repaint(now)
   while #queue > 0 and now >= queue[1].at do
