@@ -302,11 +302,16 @@ local function voice_continuous(cc, value)
   if not tr then return true end
   local x = value / 127
   local cur
-  if kind == "vol" then cur = vol_to_norm(reaper.GetMediaTrackInfo_Value(tr, "D_VOL"))
-  elseif kind == "pan" then cur = (reaper.GetMediaTrackInfo_Value(tr, "D_PAN") + 1) / 2
+  -- read what the fader shows (envelopes included) and write the way a control surface does: LoopCanvas's voice
+  -- folders carry Volume / Pan envelopes in Latch mode, which override a plain D_VOL write but honour a surface move
+  -- (and record it while playing, which is how LoopCanvas captures moves)
+  local _, uvol, upan = reaper.GetTrackUIVolPan(tr)
+  if kind == "vol" then cur = vol_to_norm(uvol)
+  elseif kind == "pan" then cur = (upan + 1) / 2
   else
     if reaper.GetTrackNumSends(tr, 0) < 1 then return true end
-    cur = vol_to_norm(reaper.GetTrackSendInfo_Value(tr, 0, 0, "D_VOL"))
+    local _, svol = reaper.GetTrackSendUIVolPan(tr, 0)
+    cur = vol_to_norm(svol)
   end
   local key = kind .. v
   local p = picked[key]
@@ -318,9 +323,15 @@ local function voice_continuous(cc, value)
       return true
     end
   end
-  if kind == "vol" then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", norm_to_vol(x))
-  elseif kind == "pan" then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", math.max(-1, math.min(1, (value - 64) / 63)))
-  else reaper.SetTrackSendInfo_Value(tr, 0, 0, "D_VOL", norm_to_vol(x)) end
+  if kind == "vol" then
+    local nv = reaper.CSurf_OnVolumeChangeEx(tr, norm_to_vol(x), false, false)
+    reaper.CSurf_SetSurfaceVolume(tr, nv, nil)
+  elseif kind == "pan" then
+    local np = reaper.CSurf_OnPanChangeEx(tr, math.max(-1, math.min(1, (value - 64) / 63)), false, false)
+    reaper.CSurf_SetSurfacePan(tr, np, nil)
+  else
+    reaper.CSurf_OnSendVolumeChange(tr, 0, norm_to_vol(x), false)
+  end
   return true
 end
 
