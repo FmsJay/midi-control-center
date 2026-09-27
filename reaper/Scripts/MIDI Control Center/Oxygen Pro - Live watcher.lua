@@ -87,6 +87,7 @@ local next_poll = 0
 local layout = 0                      -- mirrors ReaLearn's layout parameter (both start at 0, step + wrap on CC 113)
 local bank = 0                        -- mirrors ReaLearn's bank parameter 0-3 (clamped, no wrap, like the preset)
 local last_seq = nil
+local fb_mode, painted, voice_cfg = 0, nil, nil   -- fader-button mode mirror (0 Off .. 4 Solo), painted voice LEDs, voice config
 local seen_reload = reaper.GetExtState("OxygenPro61Watcher", "realearn_reloaded")
 -- ReaLearn reloads (editor Apply, setup, dev tools) reset its layout and bank to 0; follow suit so the sweep colour
 -- and the bank flash keep telling the truth
@@ -94,7 +95,8 @@ local function check_realearn_reload()
   local r = reaper.GetExtState("OxygenPro61Watcher", "realearn_reloaded")
   if r ~= seen_reload then
     seen_reload = r
-    layout, bank = 0, 0
+    layout, bank, fb_mode, painted = 0, 0, 0, nil
+    voice_cfg = nil   -- an Apply may have changed which layouts use voices
     log("ReaLearn reloaded: layout and bank mirrors reset to 1")
   end
 end
@@ -194,32 +196,48 @@ end
 -- runs LoopCanvas's own action for that voice. LoopCanvas does the work (and reports the state the LEDs show).
 local VOICE_STATUS = 0xBE
 local VOICE_ACTIONS = { { base = 20, verb = "TOGGLE" }, { base = 36, verb = "ARM" }, { base = 52, verb = "MUTE" }, { base = 68, verb = "SOLO" } }
--- ReaLearn does not notice when an extension action's toggle state changes, so the voice LEDs would freeze. Poll
--- LoopCanvas's 64 per-voice states a few times a second and ask ReaLearn to resend feedback when any changed
--- (covers mouse clicks and LoopCanvas's own verbs too).
-local voice_ids, voice_sig, next_voice_poll = nil, nil, 0
-local function poll_voice_states(now)
-  if now < next_voice_poll then return end
-  next_voice_poll = now + 0.15
-  if not voice_ids then
-    voice_ids = {}
-    for _, a in ipairs(VOICE_ACTIONS) do
-      for n = 1, 16 do
-        local id = reaper.NamedCommandLookup(string.format("_LOOPCANVAS_%s_VOICE_%d", a.verb, n))
-        if id ~= 0 then voice_ids[#voice_ids + 1] = id end
-      end
-    end
-  end
-  if #voice_ids == 0 then return end
-  local t = {}
-  for i, id in ipairs(voice_ids) do t[i] = reaper.GetToggleCommandState(id) == 1 and "1" or "0" end
-  local sig = table.concat(t)
-  if sig ~= voice_sig then
-    local first = (voice_sig == nil)
-    voice_sig = sig
-    if not first then
-      local cmd = reaper.NamedCommandLookup(RESYNC_CMD)
-      if cmd ~= 0 then reaper.Main_OnCommand(cmd, 0) end
+-- The voice LEDs: ReaLearn never refreshes feedback for an extension action's toggle state, so the watcher paints
+-- the eight fader-button LEDs itself while a voice layout, a track bank and Record / Select / Mute / Solo mode are
+-- all active. It follows the mode from ReaLearn's mode echo (CC 57-61 into port 1), the layout and bank from its
+-- mirrors, and reads which layouts use voices and where each bank starts from model.json.
+local MODE_VERB = { [1] = "ARM", [2] = "TOGGLE", [3] = "MUTE", [4] = "SOLO" }
+local function load_voice_cfg()
+  voice_cfg = { layouts = {}, bank_first = {} }
+  local f = io.open(reaper.GetResourcePath() .. "/Scripts/MIDI Control Center/midi_control_center/model.json", "r")
+  if not f then return end
+  local text = f:read("*a"); f:close()
+  local okj, json = pcall(require, "json")
+  if not okj then return end
+  local ok, m = pcall(json.decode, text)
+  if not ok or type(m) ~= "table" then return end
+  for i, lay in ipairs(m.layouts or {}) do if lay.select_target == "voices" then voice_cfg.layouts[i - 1] = true end end
+  for i, b in ipairs(m.banks or {}) do if b.kind == "tracks" then voice_cfg.bank_first[i - 1] = b.first_track or 0 end end
+end
+local voice_id_cache = {}
+local function voice_state(verb, n)
+  local key = verb .. n
+  local id = voice_id_cache[key]
+  if id == nil then id = reaper.NamedCommandLookup(string.format("_LOOPCANVAS_%s_VOICE_%d", verb, n)); voice_id_cache[key] = id end
+  return id ~= 0 and reaper.GetToggleCommandState(id) == 1
+end
+local next_led_poll, next_led_full = 0, 0
+local function paint_voice_leds(now)
+  if now < next_led_poll then return end
+  next_led_poll = now + 0.08
+  if not voice_cfg then load_voice_cfg() end
+  local verb = MODE_VERB[fb_mode]
+  local first = voice_cfg.bank_first[bank]
+  if not (out_idx and verb and first and voice_cfg.layouts[layout]) then painted = nil; return end
+  local full = now >= next_led_full                        -- repaint everything now and then: other sources may overwrite
+  if full then next_led_full = now + 1.0 end
+  painted = painted or {}
+  for k = 0, 7 do
+    local n = first + k + 1
+    local on = n <= 16 and voice_state(verb, n) or false
+    if full or painted[k] ~= on then
+      painted[k] = on
+      local msg = string.char(0xB0, 32 + k, on and 127 or 0)
+      reaper.SendMIDIMessageToHardware(out_idx, msg, #msg)
     end
   end
 end
@@ -253,8 +271,11 @@ local function poll_layout_button(now)
         local n = 0
         for _ in pairs(LAYOUT_COLOUR) do n = n + 1 end
         layout = (layout + 1) % math.max(1, n)
+        painted = nil
         flash(now, LAYOUT_COLOUR[layout] or 12)
         log("layout press seen -> layout " .. (layout + 1) .. " of " .. n)
+      elseif status == 0xB0 and d1 >= 57 and d1 <= 61 and d2 > 0 then
+        fb_mode = d1 - 57; painted = nil
       elseif status == 0xB0 and d1 == TAP_CC and d2 > 0 then
         tap(now)
       elseif status == 0xB0 and d1 == BACK_CC then
@@ -266,6 +287,7 @@ local function poll_layout_button(now)
         -- SDP-120 number echo performed
       elseif status == 0xB0 and (d1 == BANK_CC_DOWN or d1 == BANK_CC_UP) and d2 > 0 then
         bank = math.max(0, math.min(3, bank + (d1 == BANK_CC_UP and 1 or -1)))
+        painted = nil
         flash_bank(now)
       end
     end
@@ -292,7 +314,7 @@ local function tick()
   end
   if SDP then SDP.reload_if_changed() end
   check_realearn_reload()
-  poll_voice_states(now)
+  paint_voice_leds(now)
   poll_layout_button(now)
   exquis_repaint(now)
   while #queue > 0 and now >= queue[1].at do

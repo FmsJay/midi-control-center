@@ -404,8 +404,9 @@ end
 -- runs LoopCanvas's own per-voice action for voice N (arm, add-or-remove from the selection, mute, solo), N being
 -- the voice's position from the top (LoopCanvas numbers 1-16). Presses are echoed into the port-1 input as
 -- CC (base + voice index) on channel 15 and the Live watcher runs the action, because the Oxygen's latching buttons
--- alternate 127 / 0 and a ReaperAction target would skip every other press. The LEDs come straight from
--- LoopCanvas: each action reports its voice's state as its toggle state, which a feedback-only mapping mirrors.
+-- alternate 127 / 0 and a ReaperAction target would skip every other press. The LEDs are painted by the watcher
+-- from LoopCanvas's per-voice toggle states: ReaLearn never refreshes feedback for an extension action's toggle
+-- state (measured 2026-09-27), so these mappings carry no feedback at all and ReaLearn leaves those LEDs alone.
 -- ReaLearn 2.18.2 refuses presets with "Expression" / "Eel" conditions (measured 2026-09-26), so "mode AND voice
 -- layout" is a two-modifier condition on the mode switch and the layout parameter; model.lua validates that the
 -- voice layouts are exactly the first layout or exactly every layout after it. No voice layout: nothing changes.
@@ -438,12 +439,6 @@ local function voice_row(group, first_track)
                 add { id = string.format("%s-voice-m%d-%d", group, mode, i + 1), name = string.format("LoopCanvas voice %d: %s", v + 1, verb),
                       group = group, feedback_enabled = false, activation_condition = c, source = cc_range(0, 32 + i),
                       target = send_to_port1(string.format("%02X %02X [0gfe dcba]", VOICE_ECHO_STATUS, VOICE_BASE[mode] + v)) }
-                add { id = string.format("%s-voiceled-m%d-%d", group, mode, i + 1), name = string.format("LED = voice %d %s state", v + 1, verb),
-                      group = group, control_enabled = false, activation_condition = c, source = cc_button(0, 32 + i),
-                      target = reaper_action(string.format("_LOOPCANVAS_%s_VOICE_%d", verb, v + 1)) }
-            else
-                add { id = string.format("%s-voiceled-m%d-dark-%d", group, mode, i + 1), name = "LED off (no LoopCanvas voice beyond 16)",
-                      group = group, control_enabled = false, activation_condition = c, source = cc_button(0, 32 + i), target = { kind = "Dummy" } }
             end
         end
     end
